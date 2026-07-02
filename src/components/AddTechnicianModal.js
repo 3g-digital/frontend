@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';  // useEffect जोड़ा
-import { FiSave } from 'react-icons/fi';
+import { FiSave, FiEye, FiEyeOff } from 'react-icons/fi';
 import Modal from '../components/Modal';
 import SummaryApi from '../common';
 import { useAuth } from '../context/AuthContext';
@@ -22,6 +22,9 @@ const AddTechnicianModal = ({ isOpen, onClose, onSuccess }) => {
   const [branches, setBranches] = useState([]);  // ब्रांचेज के लिए स्टेट जोड़ा
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [usernameError, setUsernameError] = useState(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   
   // मॉडल खुलने पर फॉर्म रीसेट करें और ब्रांचेज फेच करें
   useEffect(() => {
@@ -50,6 +53,7 @@ const AddTechnicianModal = ({ isOpen, onClose, onSuccess }) => {
       status: 'active'
     });
     setError(null);
+    setUsernameError(null);
     
     // ऑटोफिल समस्या को ठीक करने के लिए थोड़ी देर का टाइमआउट जोड़ें
     setTimeout(() => {
@@ -114,16 +118,49 @@ const AddTechnicianModal = ({ isOpen, onClose, onSuccess }) => {
       ...prev,
       [name]: value
     }));
+
+    // Clear username error when user starts typing
+    if (name === 'username' && usernameError) {
+      setUsernameError(null);
+    }
+  };
+
+  const validateUsername = (username) => {
+    const trimmedUsername = username.trim();
+
+    if (!trimmedUsername) {
+      return 'Username is required';
+    }
+
+    const usernameRegex = /^[a-zA-Z0-9_.-@#]+$/;
+    if (!usernameRegex.test(trimmedUsername)) {
+      return 'Username can only contain letters, numbers, and symbols (_ . - @ #). Spaces are not allowed.';
+    }
+
+    return null;
+  };
+
+  const handleUsernameBlur = () => {
+    const error = validateUsername(formData.username);
+    setUsernameError(error);
   };
   
   const validateForm = () => {
+    // Check username validity first
+    const usernameValidationError = validateUsername(formData.username);
+    if (usernameValidationError) {
+      setUsernameError(usernameValidationError);
+      setError(usernameValidationError);
+      return false;
+    }
+
     // एडमिन के लिए ब्रांच वैलिडेशन जोड़ें
     if (user.role === 'admin' && !formData.branch) {
       setError('Please select a branch');
       return false;
     }
-    
-    if (!formData.firstName || !formData.lastName || !formData.username || !formData.email || !formData.password) {
+
+    if (!formData.firstName || !formData.username || !formData.password) {
       setError('Please fill in all required fields');
       return false;
     }
@@ -133,11 +170,11 @@ const AddTechnicianModal = ({ isOpen, onClose, onSuccess }) => {
       return false;
     }
     
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(formData.email)) {
-      setError('Please enter a valid email address');
-      return false;
-    }
+    // const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    // if (!emailRegex.test(formData.email)) {
+    //   setError('Please enter a valid email address');
+    //   return false;
+    // }
     
     if (formData.password.length < 6) {
       setError('Password must be at least 6 characters long');
@@ -157,10 +194,13 @@ const AddTechnicianModal = ({ isOpen, onClose, onSuccess }) => {
     
     try {
       setLoading(true);
-      
+
       // confirmPassword हटा दें API कॉल से पहले
       const { confirmPassword, ...dataToSubmit } = formData;
-      
+
+      // Trim username to remove leading/trailing spaces
+      dataToSubmit.username = dataToSubmit.username.trim();
+
       // मैनेजर के लिए उनके ब्रांच का उपयोग करें
       if (user.role === 'manager') {
         dataToSubmit.branch = user.branch;
@@ -204,18 +244,15 @@ const AddTechnicianModal = ({ isOpen, onClose, onSuccess }) => {
   };
   
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Add New Technician" size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title="Add New Engineer" size="lg">
       {error && (
         <div className="bg-red-100 text-red-700 p-3 rounded mb-4">
           {error}
         </div>
       )}
       
-      <form onSubmit={handleSubmit} autoComplete="off">
-        {/* ऑटोफिल बंद करने के लिए हिडन फील्ड्स */}
-        <input type="text" style={{ display: 'none' }} />
-        <input type="password" style={{ display: 'none' }} />
-        
+      <form onSubmit={handleSubmit}>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <label className="block text-gray-700 mb-2" htmlFor="firstName">
@@ -236,7 +273,7 @@ const AddTechnicianModal = ({ isOpen, onClose, onSuccess }) => {
           
           <div>
             <label className="block text-gray-700 mb-2" htmlFor="lastName">
-              Last Name*
+              Last Name
             </label>
             <input
               id="lastName"
@@ -247,7 +284,6 @@ const AddTechnicianModal = ({ isOpen, onClose, onSuccess }) => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               placeholder="Enter last name"
               autoComplete="off"
-              required
             />
           </div>
           
@@ -261,16 +297,20 @@ const AddTechnicianModal = ({ isOpen, onClose, onSuccess }) => {
               type="text"
               value={formData.username}
               onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              onBlur={handleUsernameBlur}
+              className={`w-full px-3 py-2 border ${usernameError ? 'border-red-500' : 'border-gray-300'} rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500`}
               placeholder="Enter username"
-              autoComplete="new-username"
+              autoComplete="off"
               required
             />
+            {usernameError && (
+              <p className="mt-1 text-sm text-red-600">{usernameError}</p>
+            )}
           </div>
           
           <div>
             <label className="block text-gray-700 mb-2" htmlFor="email">
-              Email*
+              Email
             </label>
             <input
               id="email"
@@ -280,8 +320,7 @@ const AddTechnicianModal = ({ isOpen, onClose, onSuccess }) => {
               onChange={handleChange}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               placeholder="Enter email"
-              autoComplete="new-email"
-              required
+              autoComplete="off"
             />
           </div>
           
@@ -289,34 +328,54 @@ const AddTechnicianModal = ({ isOpen, onClose, onSuccess }) => {
             <label className="block text-gray-700 mb-2" htmlFor="password">
               Password*
             </label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              value={formData.password}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              placeholder="Enter password"
-              autoComplete="new-password"
-              required
-            />
+            <div className="relative">
+              <input
+                id="password"
+                name="password"
+                type="text"
+                value={formData.password}
+                onChange={handleChange}
+                className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                style={!showPassword ? { WebkitTextSecurity: 'disc' } : {}}
+                placeholder="Enter password"
+                autoComplete="off"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+              >
+                {showPassword ? <FiEyeOff size={20} /> : <FiEye size={20} />}
+              </button>
+            </div>
           </div>
           
           <div>
             <label className="block text-gray-700 mb-2" htmlFor="confirmPassword">
               Confirm Password*
             </label>
-            <input
-              id="confirmPassword"
-              name="confirmPassword"
-              type="password"
-              value={formData.confirmPassword}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              placeholder="Confirm password"
-              autoComplete="new-password"
-              required
-            />
+            <div className="relative">
+              <input
+                id="confirmPassword"
+                name="confirmPassword"
+                type="text"
+                value={formData.confirmPassword}
+                onChange={handleChange}
+                className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                style={!showConfirmPassword ? { WebkitTextSecurity: 'disc' } : {}}
+                placeholder="Confirm password"
+                autoComplete="off"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+              >
+                {showConfirmPassword ? <FiEyeOff size={20} /> : <FiEye size={20} />}
+              </button>
+            </div>
           </div>
           
           <div>
@@ -402,7 +461,7 @@ const AddTechnicianModal = ({ isOpen, onClose, onSuccess }) => {
               </>
             ) : (
               <>
-                <FiSave className="mr-2" /> Save Technician
+                <FiSave className="mr-2" /> Save Engineer
               </>
             )}
           </button>

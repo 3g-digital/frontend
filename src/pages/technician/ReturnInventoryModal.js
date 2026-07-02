@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  X, 
-  Package, 
+import {
+  X,
+  Package,
   ChevronDown,
   AlertCircle,
-  Check
+  Check,
+  Search
 } from 'lucide-react';
 import SummaryApi from '../../common';
 
@@ -15,6 +16,7 @@ const ReturnInventoryModal = ({ isOpen, onClose, onInventoryReturned, darkMode =
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [expandedItems, setExpandedItems] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
   // Add new state for confirmation modal
   const [showConfirmation, setShowConfirmation] = useState(false);
   
@@ -22,9 +24,37 @@ const ReturnInventoryModal = ({ isOpen, onClose, onInventoryReturned, darkMode =
   useEffect(() => {
     if (isOpen) {
       fetchInventory();
+      setSearchTerm(''); // Reset search when modal opens
     }
   }, [isOpen]);
-  
+
+  // Filter inventory based on search term
+  useEffect(() => {
+    if (!searchTerm.trim()) {
+      setFilteredInventory(inventory);
+      return;
+    }
+
+    const searchLower = searchTerm.toLowerCase().trim();
+    const filtered = inventory.filter(item => {
+      // Search by item name
+      const nameMatch = item.itemName?.toLowerCase().includes(searchLower);
+
+      // For serialized products, also search by serial numbers
+      if (item.type === 'serialized-product') {
+        const serialMatch = item.serializedItems?.some(si =>
+          si.status === 'active' && si.serialNumber?.toLowerCase().includes(searchLower)
+        );
+        return nameMatch || serialMatch;
+      }
+
+      // For generic products, only search by name
+      return nameMatch;
+    });
+
+    setFilteredInventory(filtered);
+  }, [searchTerm, inventory]);
+
   const fetchInventory = async () => {
     try {
       setLoading(true);
@@ -32,9 +62,9 @@ const ReturnInventoryModal = ({ isOpen, onClose, onInventoryReturned, darkMode =
         method: SummaryApi.getTechnicianInventory.method,
         credentials: 'include'
       });
-      
+
       const data = await response.json();
-      
+
       if (data.success) {
         // Filter out items with 0 quantity
         const activeInventory = data.data.filter(item => {
@@ -149,6 +179,90 @@ const ReturnInventoryModal = ({ isOpen, onClose, onInventoryReturned, darkMode =
       item => item.itemId === itemId && item.serialNumber === serialNumber
     );
   };
+
+  // Get active serial numbers for an item
+  const getActiveSerialNumbers = (item) => {
+    return item.serializedItems
+      ?.filter(serialItem => serialItem.status === 'active')
+      ?.map(serialItem => serialItem.serialNumber) || [];
+  };
+
+  // Check if serial number matches search term
+  const highlightSearchTerm = (text) => {
+    if (!searchTerm.trim() || !text) return text;
+
+    const searchLower = searchTerm.toLowerCase();
+    const textLower = text.toLowerCase();
+
+    if (!textLower.includes(searchLower)) return text;
+
+    const index = textLower.indexOf(searchLower);
+    const before = text.substring(0, index);
+    const match = text.substring(index, index + searchTerm.length);
+    const after = text.substring(index + searchTerm.length);
+
+    return (
+      <>
+        {before}
+        <span className={darkMode ? 'bg-yellow-600 text-white' : 'bg-yellow-200 text-gray-900'}>
+          {match}
+        </span>
+        {after}
+      </>
+    );
+  };
+
+  // Check if all active serials are selected for an item
+  const areAllSerialsSelected = (item) => {
+    const itemKey = item._id || item.itemId || item.id;
+    const activeSerials = getActiveSerialNumbers(item);
+    if (activeSerials.length === 0) return false;
+
+    return activeSerials.every(serial =>
+      isSerialItemSelected(itemKey, serial)
+    );
+  };
+
+  // Toggle select all serial numbers for an item
+  const toggleSelectAllSerials = (item) => {
+    const itemKey = item._id || item.itemId || item.id;
+    const activeSerials = getActiveSerialNumbers(item);
+
+    if (activeSerials.length === 0) return;
+
+    setSelectedItems(prevSelected => {
+      const allSelected = activeSerials.every(serial =>
+        prevSelected.some(sel => sel.itemId === itemKey && sel.serialNumber === serial)
+      );
+
+      if (allSelected) {
+        // Deselect all active serial numbers
+        return prevSelected.filter(
+          sel => !(sel.itemId === itemKey && activeSerials.includes(sel.serialNumber))
+        );
+      }
+
+      // Add any missing serial numbers
+      const updated = [...prevSelected];
+
+      activeSerials.forEach(serial => {
+        const alreadySelected = updated.some(
+          sel => sel.itemId === itemKey && sel.serialNumber === serial
+        );
+
+        if (!alreadySelected) {
+          updated.push({
+            itemId: itemKey,
+            itemName: item.itemName,
+            type: 'serialized-product',
+            serialNumber: serial
+          });
+        }
+      });
+
+      return updated;
+    });
+  };
   
   // Get selected quantity for generic item
   const getSelectedQuantity = (itemId) => {
@@ -184,38 +298,41 @@ const ReturnInventoryModal = ({ isOpen, onClose, onInventoryReturned, darkMode =
     try {
       setLoading(true);
       setShowConfirmation(false); // Hide confirmation
-      
-      // Process each item separately
-      for (const item of selectedItems) {
-        console.log("Sending return request:", item);
-        const response = await fetch(SummaryApi.returnInventoryToManager.url, {
-          method: SummaryApi.returnInventoryToManager.method,
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          credentials: 'include',
-          body: JSON.stringify(item)
-        });
-        
-        const data = await response.json();
-        
-        if (!data.success) {
-          setError(data.message || 'Failed to return some items');
-          // Continue with other items
-        }
+
+      // Send ALL items in a SINGLE API call as a batch
+      console.log("Sending batch return request with", selectedItems.length, "items");
+      const response = await fetch(SummaryApi.returnInventoryToManager.url, {
+        method: SummaryApi.returnInventoryToManager.method,
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          items: selectedItems // Send all items as an array
+        })
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        setError(data.message || 'Failed to return items');
+        setLoading(false);
+        return;
       }
-      
+
+      console.log("Batch return successful:", data);
+
       // Refresh inventory after return
       await fetchInventory();
-      
+
       // Notify parent component
       if (onInventoryReturned) {
         onInventoryReturned();
       }
-      
+
       // Reset selections
       setSelectedItems([]);
-      
+
       // Close modal
       onClose();
     } catch (err) {
@@ -265,18 +382,63 @@ const ReturnInventoryModal = ({ isOpen, onClose, onInventoryReturned, darkMode =
           </div>
         )}
 
+        {/* Search Bar */}
+        <div className="p-4 pb-0">
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Search size={18} className={darkMode ? 'text-gray-400' : 'text-gray-500'} />
+            </div>
+            <input
+              type="text"
+              placeholder="Search by item name or serial number..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className={`w-full pl-10 pr-4 py-2 rounded-lg border ${
+                darkMode
+                  ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400 focus:border-teal-500 focus:ring-1 focus:ring-teal-500'
+                  : 'bg-white border-gray-300 text-gray-800 placeholder-gray-500 focus:border-teal-500 focus:ring-1 focus:ring-teal-500'
+              } outline-none transition-colors`}
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center"
+              >
+                <X size={16} className={darkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-500 hover:text-gray-700'} />
+              </button>
+            )}
+          </div>
+          {searchTerm && (
+            <p className={`mt-2 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+              Found {filteredInventory.length} item{filteredInventory.length !== 1 ? 's' : ''}
+            </p>
+          )}
+        </div>
+
         {/* Inventory List */}
-        <div 
-          className="overflow-y-auto" 
-          style={{ maxHeight: 'calc(90vh - 190px)' }}
+        <div
+          className="overflow-y-auto"
+          style={{ maxHeight: 'calc(90vh - 260px)' }}
         >
           {loading ? (
             <div className="p-4 text-center">
               <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>Loading inventory...</p>
             </div>
           ) : filteredInventory.length === 0 ? (
-            <div className="p-4 text-center text-gray-500">
-              No inventory items to return.
+            <div className="p-4 text-center">
+              <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>
+                {searchTerm
+                  ? `No items found matching "${searchTerm}"`
+                  : 'No inventory items to return.'}
+              </p>
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className={`mt-2 text-sm ${darkMode ? 'text-teal-400 hover:text-teal-300' : 'text-teal-600 hover:text-teal-700'}`}
+                >
+                  Clear search
+                </button>
+              )}
             </div>
           ) : (
             <div className="space-y-1">
@@ -285,6 +447,7 @@ const ReturnInventoryModal = ({ isOpen, onClose, onInventoryReturned, darkMode =
                 const itemKey = item._id || item.itemId || item.id;
                 const itemCount = getItemQuantity(item);
                 const isExpanded = expandedItems.includes(itemKey);
+                const activeSerialNumbers = getActiveSerialNumbers(item);
                 
                 return (
                   <div key={itemKey}>
@@ -296,7 +459,9 @@ const ReturnInventoryModal = ({ isOpen, onClose, onInventoryReturned, darkMode =
                           {index + 1}
                         </div>
                         <div>
-                          <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-800'}`}>{item.itemName}</p>
+                          <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+                            {highlightSearchTerm(item.itemName)}
+                          </p>
                           <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'} capitalize`}>
                             {item.type.replace('-product', '')}
                           </p>
@@ -325,7 +490,7 @@ const ReturnInventoryModal = ({ isOpen, onClose, onInventoryReturned, darkMode =
                         </div>
                       ) : (
                         <div className="flex items-center">
-                        <button 
+                        <button
                           onClick={() => handleQuantityChange(item, Math.max(0, getSelectedQuantity(itemKey) - 1))}
                           className={`w-8 h-8 flex items-center justify-center rounded-l-md ${darkMode ? 'bg-gray-700 text-white' : 'bg-gray-200 text-gray-800'}`}
                         >
@@ -336,13 +501,18 @@ const ReturnInventoryModal = ({ isOpen, onClose, onInventoryReturned, darkMode =
                           min="0"
                           max={item.genericQuantity}
                           value={getSelectedQuantity(itemKey)}
-                          readOnly
-                          className={`w-16 text-center py-1 appearance-none 
+                          onChange={(e) => {
+                            const value = e.target.value === '' ? 0 : parseInt(e.target.value);
+                            if (!isNaN(value)) {
+                              handleQuantityChange(item, value);
+                            }
+                          }}
+                          className={`w-16 text-center py-1 appearance-none
                             ${darkMode ? 'bg-gray-700 text-white border-gray-600' : 'bg-gray-100 text-gray-800'}
-                            [&::-webkit-inner-spin-button]:appearance-none 
+                            [&::-webkit-inner-spin-button]:appearance-none
                             [&::-webkit-outer-spin-button]:appearance-none`}
                         />
-                        <button 
+                        <button
                           onClick={() => handleQuantityChange(item, Math.min(item.genericQuantity, getSelectedQuantity(itemKey) + 1))}
                           className={`w-8 h-8 flex items-center justify-center rounded-r-md ${darkMode ? 'bg-gray-700 text-white' : 'bg-gray-200 text-gray-800'}`}
                         >
@@ -356,25 +526,49 @@ const ReturnInventoryModal = ({ isOpen, onClose, onInventoryReturned, darkMode =
                     {item.type === 'serialized-product' && isExpanded && (
                       <div className={`px-4 pb-4 ${darkMode ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
                         <div className="ml-11 border-l-2 border-teal-500 pl-4 space-y-2">
-                          {item.serializedItems
-                            .filter(s => s.status === 'active')
-                            .map((serialItem) => (
+                          <div className="flex items-center justify-between">
+                            <label className="flex items-center text-sm font-medium cursor-pointer">
+                              <input
+                                type="checkbox"
+                                className={`mr-2 ${darkMode ? 'text-teal-500' : 'text-teal-600'}`}
+                                checked={areAllSerialsSelected(item)}
+                                onChange={() => toggleSelectAllSerials(item)}
+                              />
+                              <span className={darkMode ? 'text-gray-200' : 'text-gray-700'}>
+                                 Serial Numbers
+                                {activeSerialNumbers.length > 0 && ` (${activeSerialNumbers.length})`}
+                              </span>
+                            </label>
+                            {areAllSerialsSelected(item) && (
+                              <button
+                                type="button"
+                                onClick={() => toggleSelectAllSerials(item)}
+                                className={`text-xs ${darkMode ? 'text-teal-300 hover:text-teal-200' : 'text-teal-600 hover:text-teal-700'}`}
+                              >
+                                Clear Selection
+                              </button>
+                            )}
+                          </div>
+
+                          {activeSerialNumbers.map((serialNumber) => (
                               <div 
-                                key={serialItem.serialNumber}
+                                key={serialNumber}
                                 className={`flex items-center p-2 rounded cursor-pointer ${
-                                  isSerialItemSelected(itemKey, serialItem.serialNumber) 
+                                  isSerialItemSelected(itemKey, serialNumber) 
                                     ? `${darkMode ? 'bg-teal-600/40' : 'bg-teal-100'} ${darkMode ? 'border-teal-500' : 'border-teal-500'}` 
                                     : `${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'} border`
                                 }`}
-                                onClick={() => toggleSerialItemSelection(item, serialItem.serialNumber)}
+                                onClick={() => toggleSerialItemSelection(item, serialNumber)}
                               >
-                                <input 
+                                <input
                                   type="checkbox"
                                   className={`mr-2 ${darkMode ? 'text-teal-500' : ''}`}
-                                  checked={isSerialItemSelected(itemKey, serialItem.serialNumber)}
+                                  checked={isSerialItemSelected(itemKey, serialNumber)}
                                   onChange={() => {}} // React requires onChange with checked
                                 />
-                                <span className={darkMode ? 'text-gray-200' : 'text-gray-800'}>{serialItem.serialNumber}</span>
+                                <span className={darkMode ? 'text-gray-200' : 'text-gray-800'}>
+                                  {highlightSearchTerm(serialNumber)}
+                                </span>
                               </div>
                             ))
                           }

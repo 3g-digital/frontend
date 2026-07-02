@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FiEdit2, FiEye } from 'react-icons/fi';
+import { FiEdit2, FiEye, FiPackage, FiList, FiRefreshCw } from 'react-icons/fi';
 import SummaryApi from '../../common';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import { useAuth } from '../../context/AuthContext';
@@ -7,7 +7,7 @@ import Modal from '../../components/Modal';
 import ProjectDetailsModal from '../manager/ProjectDetailsModal';
 import EditTechnicianModal from '../users/EditTechnicianModal';
 
-const TechnicianDetailModal = ({ isOpen, onClose, technicianId, onTechnicianUpdated }) => {
+const TechnicianDetailModal = ({ isOpen, onClose, technicianId, onTechnicianUpdated, onAssignInventory, onViewInventory }) => {
   const { user } = useAuth();
   const [technician, setTechnician] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -18,12 +18,12 @@ const TechnicianDetailModal = ({ isOpen, onClose, technicianId, onTechnicianUpda
     transferredProjects: [],
     completedProjects: []
   });
-  
+  const [refreshingProjects, setRefreshingProjects] = useState(false);
+
   // Project details modal state
   const [showProjectDetailsModal, setShowProjectDetailsModal] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [expandedRow, setExpandedRow] = useState(null);
 
   const fetchTechnician = async () => {
     if (!technicianId) return;
@@ -163,6 +163,20 @@ const handleTechnicianUpdated = () => {
   // Call the onTechnicianUpdated prop if provided
   onTechnicianUpdated && onTechnicianUpdated();
 };
+
+// Handler for refreshing projects
+const handleRefreshProjects = async () => {
+  if (!technicianId || refreshingProjects) return;
+
+  setRefreshingProjects(true);
+  try {
+    await fetchTechnicianProjects(technicianId);
+  } catch (err) {
+    console.error('Error refreshing projects:', err);
+  } finally {
+    setRefreshingProjects(false);
+  }
+};
   
   // Get status badge style
   const getStatusBadge = (status) => {
@@ -185,11 +199,13 @@ const handleTechnicianUpdated = () => {
   if (!isOpen) return null;
   
   return (
-    <Modal 
-      isOpen={isOpen} 
-      onClose={onClose} 
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
       title="Technician Details"
       size="xl"
+      zIndex="z-[40]"
+      draggable={true}
     >
       {loading && !technician ? (
         <div className="p-6 flex justify-center">
@@ -276,8 +292,49 @@ const handleTechnicianUpdated = () => {
           {/* Projects panel - Right side */}
           <div className="lg:col-span-2 bg-white rounded-lg overflow-hidden border border-gray-200">
   <div className="p-6">
-    <h2 className="text-xl font-semibold mb-6">Projects</h2>
-    
+    <div className="flex justify-between items-center mb-6">
+      <div className="flex items-center space-x-3">
+        <h2 className="text-xl font-semibold">Projects</h2>
+
+        {/* Refresh Button */}
+        <button
+          onClick={handleRefreshProjects}
+          disabled={refreshingProjects}
+          className={`p-2 rounded-md transition-colors ${
+            refreshingProjects
+              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+          }`}
+          title="Refresh projects"
+        >
+          <FiRefreshCw
+            className={`w-4 h-4 ${refreshingProjects ? 'animate-spin' : ''}`}
+          />
+        </button>
+      </div>
+
+      {/* Inventory Action Buttons */}
+      {user.role === 'manager' && (
+        <div className="flex space-x-3">
+          <button
+            className="px-4 py-1.5 bg-green-500 text-white rounded-md hover:bg-green-600 flex items-center text-sm"
+            onClick={() => onAssignInventory && onAssignInventory(technician)}
+          >
+            <FiPackage className="mr-2" />
+            Assign Inventory
+          </button>
+
+          <button
+            className="px-4 py-1.5 bg-purple-500 text-white rounded-md hover:bg-purple-600 flex items-center text-sm"
+            onClick={() => onViewInventory && onViewInventory(technician)}
+          >
+            <FiList className="mr-2" />
+            View Inventory
+          </button>
+        </div>
+      )}
+    </div>
+
     {/* Projects table */}
     {projectsData.inProgressProjects.length === 0 && 
      projectsData.pendingApprovalProjects.length === 0 && 
@@ -321,10 +378,8 @@ const handleTechnicianUpdated = () => {
     return (
       <React.Fragment key={projectId}>
         <tr 
-          onClick={() => setExpandedRow(expandedRow === projectId ? null : projectId)}
-          className={`hover:bg-gray-50 cursor-pointer ${
-            expandedRow === projectId ? 'bg-gray-50' : ''
-          }`}
+          onClick={() => handleViewProject(project)}
+          className="hover:bg-gray-50 cursor-pointer"
         >
           <td className="px-2 py-3 whitespace-nowrap">
             <div className="w-8 h-8 rounded-full bg-pink-600 flex items-center justify-center text-white font-medium">
@@ -367,23 +422,6 @@ const handleTechnicianUpdated = () => {
             )}
           </td>
         </tr>
-        {expandedRow === projectId && (
-          <tr>
-            <td colSpan="5" className="px-6 py-4 bg-gray-50 border-b">
-              <div className="flex space-x-3">
-                <button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleViewProject(project);
-                  }}
-                  className="inline-flex items-center px-4 py-1.5 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-500 hover:bg-blue-600"
-                >
-                  View Details
-                </button>
-              </div>
-            </td>
-          </tr>
-        )}
       </React.Fragment>
     );
   })

@@ -14,7 +14,7 @@ const ResetDefaultPage = () => {
       return;
     }
     
-    if (password === 'bhopadi@123') {
+    if (password === 'admin123') {
       setPasswordError('');
       setShowConfirmation(true);
     } else {

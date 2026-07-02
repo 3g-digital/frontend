@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { FiTrash, FiPlus, FiSearch } from 'react-icons/fi';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { FiTrash, FiPlus, FiSearch, FiChevronDown, FiChevronRight, FiRefreshCw } from 'react-icons/fi';
 import SummaryApi from '../../common';
 import { LuArrowUpDown } from "react-icons/lu";
 import { LuArrowDownUp } from "react-icons/lu";
@@ -8,7 +8,7 @@ import { useAuth } from '../../context/AuthContext';
 import ConfirmationDialog from '../../components/ConfirmationDialog';
 import Modal from '../../components/Modal';
 
-const AllInventoryItems = ({ searchTerm = '', refreshTrigger = 0, branch = '' }) => {
+const AllInventoryItems = ({ searchTerm = '', refreshTrigger = 0, branch = '', sortField = 'name', sortOrder = 'asc' }) => {
   const { user } = useAuth();
   const { showNotification } = useNotification();
   const [items, setItems] = useState([]);
@@ -16,9 +16,6 @@ const AllInventoryItems = ({ searchTerm = '', refreshTrigger = 0, branch = '' })
   const [error, setError] = useState(null);
   const CACHE_STALENESS_TIME = 15 * 60 * 1000;
   const [lastRefreshTime, setLastRefreshTime] = useState(0);
-  // const [searchTerm, setSearchTerm] = useState('');
-  const [sortOrder, setSortOrder] = useState('asc'); // New state for sorting order
-  const [sortField, setSortField] = useState('name'); // New state for sorting field ('name' or 'price')
   
   // Modal states
   const [isViewStockModalOpen, setIsViewStockModalOpen] = useState(false);
@@ -26,6 +23,12 @@ const AllInventoryItems = ({ searchTerm = '', refreshTrigger = 0, branch = '' })
   const [isAddStockModalOpen, setIsAddStockModalOpen] = useState(false);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [showSaveConfirmation, setShowSaveConfirmation] = useState(false);
+  const [activeStockTab, setActiveStockTab] = useState('current');
+  const [currentStockData, setCurrentStockData] = useState(null);
+  const [currentStockLoading, setCurrentStockLoading] = useState(false);
+  const [currentStockError, setCurrentStockError] = useState(null);
+  const [expandedHistoryGroups, setExpandedHistoryGroups] = useState({});
+  const [refreshingStock, setRefreshingStock] = useState(false);
 const [stockEntriesToSave, setStockEntriesToSave] = useState([]);
 const [currentSavingItem, setCurrentSavingItem] = useState(null);
 const [saveLoading, setSaveLoading] = useState(false);
@@ -81,9 +84,9 @@ const [saveLoading, setSaveLoading] = useState(false);
  // बैकग्राउंड में ताज़ा डेटा फेच करने का फंक्शन
 const fetchFreshItemsInBackground = async () => {
   try {
-    // तीनों प्रकार के इन्वेंटरी आइटम्स को पैरेलल में फेच करें
+    // दो प्रकार के इन्वेंटरी आइटम्स को पैरेलल में फेच करें (services को छोड़कर)
     const branchQuery = branch ? `?branch=${branch}` : '';
-    const [serializedResponse, genericResponse, servicesResponse] = await Promise.all([
+    const [serializedResponse, genericResponse] = await Promise.all([
       fetch(`${SummaryApi.getInventoryByType.url}/serialized-product${branchQuery}`, {
         method: SummaryApi.getInventoryByType.method,
         credentials: 'include'
@@ -91,25 +94,19 @@ const fetchFreshItemsInBackground = async () => {
       fetch(`${SummaryApi.getInventoryByType.url}/generic-product${branchQuery}`, {
         method: SummaryApi.getInventoryByType.method,
         credentials: 'include'
-      }),
-      fetch(`${SummaryApi.getInventoryByType.url}/service${branchQuery}`, {
-        method: SummaryApi.getInventoryByType.method,
-        credentials: 'include'
       })
     ]);
-    
+
     // सभी रिस्पांस को पार्स करें
-    const [serializedData, genericData, servicesData] = await Promise.all([
+    const [serializedData, genericData] = await Promise.all([
       serializedResponse.json(),
-      genericResponse.json(),
-      servicesResponse.json()
+      genericResponse.json()
     ]);
-    
-    // सभी आइटम्स को कम्बाइन करें और टाइप प्रॉपर्टी जोड़ें
+
+    // सभी आइटम्स को कम्बाइन करें और टाइप प्रॉपर्टी जोड़ें (services को छोड़कर)
     const combinedItems = [
       ...(serializedData.success ? serializedData.items.map(item => ({ ...item, itemType: 'serialized' })) : []),
-      ...(genericData.success ? genericData.items.map(item => ({ ...item, itemType: 'generic' })) : []),
-      ...(servicesData.success ? servicesData.items.map(item => ({ ...item, itemType: 'service' })) : [])
+      ...(genericData.success ? genericData.items.map(item => ({ ...item, itemType: 'generic' })) : [])
     ];
     
     // नया टाइमस्टैम्प सेट करें
@@ -132,8 +129,8 @@ const fetchFreshItemsInBackground = async () => {
 const fetchFreshItems = async () => {
   try {
     const branchQuery = branch ? `?branch=${branch}` : '';
-    // तीनों प्रकार के इन्वेंटरी आइटम्स को पैरेलल में फेच करें
-    const [serializedResponse, genericResponse, servicesResponse] = await Promise.all([
+    // दो प्रकार के इन्वेंटरी आइटम्स को पैरेलल में फेच करें (services को छोड़कर)
+    const [serializedResponse, genericResponse] = await Promise.all([
       fetch(`${SummaryApi.getInventoryByType.url}/serialized-product${branchQuery}`, {
         method: SummaryApi.getInventoryByType.method,
         credentials: 'include'
@@ -141,25 +138,19 @@ const fetchFreshItems = async () => {
       fetch(`${SummaryApi.getInventoryByType.url}/generic-product${branchQuery}`, {
         method: SummaryApi.getInventoryByType.method,
         credentials: 'include'
-      }),
-      fetch(`${SummaryApi.getInventoryByType.url}/service${branchQuery}`, {
-        method: SummaryApi.getInventoryByType.method,
-        credentials: 'include'
       })
     ]);
-    
+
     // सभी रिस्पांस को पार्स करें
-    const [serializedData, genericData, servicesData] = await Promise.all([
+    const [serializedData, genericData] = await Promise.all([
       serializedResponse.json(),
-      genericResponse.json(),
-      servicesResponse.json()
+      genericResponse.json()
     ]);
-    
-    // सभी आइटम्स को कम्बाइन करें और टाइप प्रॉपर्टी जोड़ें
+
+    // सभी आइटम्स को कम्बाइन करें और टाइप प्रॉपर्टी जोड़ें (services को छोड़कर)
     const combinedItems = [
       ...(serializedData.success ? serializedData.items.map(item => ({ ...item, itemType: 'serialized' })) : []),
-      ...(genericData.success ? genericData.items.map(item => ({ ...item, itemType: 'generic' })) : []),
-      ...(servicesData.success ? servicesData.items.map(item => ({ ...item, itemType: 'service' })) : [])
+      ...(genericData.success ? genericData.items.map(item => ({ ...item, itemType: 'generic' })) : [])
     ];
     
     // नया टाइमस्टैम्प सेट करें
@@ -219,6 +210,12 @@ const handleRefresh = () => {
       // localStorage से कैश को हटा दें
       localStorage.removeItem('inventoryItems');
       fetchAllItems(); // Refresh the data
+
+      // Refresh View Details modal data if it's open
+      if (selectedStockItem && isViewStockModalOpen) {
+        loadCurrentStockData(selectedStockItem);
+      }
+
       setIsAddStockModalOpen(false);
     } catch (err) {
       showNotification('error', 'Server error. Please try again later.');
@@ -228,10 +225,230 @@ const handleRefresh = () => {
     }
   };
 
-  // Open view stock modal
-  const openViewStockModal = (item) => {
+  // State for stock history
+  const [stockHistory, setStockHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // Open view stock modal and fetch complete stock history
+  const openViewStockModal = async (item) => {
     setSelectedStockItem(item);
     setIsViewStockModalOpen(true);
+    setActiveStockTab('current');
+    setCurrentStockData(null);
+    setCurrentStockError(null);
+    setLoadingHistory(true);
+
+    loadCurrentStockData(item);
+
+    try {
+      const response = await fetch(`${SummaryApi.getStockHistory.url}/${item.id}`, {
+        method: SummaryApi.getStockHistory.method,
+        credentials: 'include'
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setStockHistory(data.history || []);
+      } else {
+        showNotification('error', data.message || 'Failed to fetch stock history');
+        setStockHistory([]);
+      }
+    } catch (err) {
+      console.error('Error fetching stock history:', err);
+      showNotification('error', 'Failed to fetch stock history');
+      setStockHistory([]);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const loadCurrentStockData = async (item) => {
+    try {
+      setCurrentStockLoading(true);
+      setCurrentStockError(null);
+
+      const itemIdentifier = item.id || item._id;
+
+      if (!itemIdentifier) {
+        setCurrentStockError('Invalid item identifier');
+        setCurrentStockLoading(false);
+        return;
+      }
+
+      const queryString = branch ? `?branch=${branch}` : '';
+      const response = await fetch(`${SummaryApi.getInventoryCurrentStock.url}/${itemIdentifier}${queryString}`, {
+        method: SummaryApi.getInventoryCurrentStock.method,
+        credentials: 'include'
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setCurrentStockData(data.data);
+      } else {
+        setCurrentStockError(data.message || 'Failed to fetch current stock details');
+        setCurrentStockData(null);
+      }
+    } catch (err) {
+      console.error('Error fetching current stock status:', err);
+      setCurrentStockError('Failed to fetch current stock details');
+      setCurrentStockData(null);
+    } finally {
+      setCurrentStockLoading(false);
+    }
+  };
+
+  // Refresh handler for stock modal
+  const handleRefreshStockData = async () => {
+    if (!selectedStockItem || refreshingStock) return;
+
+    setRefreshingStock(true);
+    try {
+      // Refresh current stock data
+      await loadCurrentStockData(selectedStockItem);
+
+      // Refresh stock history
+      setLoadingHistory(true);
+      const response = await fetch(`${SummaryApi.getStockHistory.url}/${selectedStockItem.id}`, {
+        method: SummaryApi.getStockHistory.method,
+        credentials: 'include'
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setStockHistory(data.history || []);
+      }
+      setLoadingHistory(false);
+
+      showNotification('success', 'Stock data refreshed successfully', 3000);
+    } catch (err) {
+      console.error('Error refreshing stock data:', err);
+      showNotification('error', 'Failed to refresh stock data', 3000);
+    } finally {
+      setRefreshingStock(false);
+    }
+  };
+
+  const isSerializedItem = (item) => item?.itemType === 'serialized';
+  const isGenericItem = (item) => item?.itemType === 'generic';
+  const itemUnit = selectedStockItem?.unit || (isSerializedItem(selectedStockItem) ? 'pcs' : '');
+
+  const formatDateTime = (value) => {
+    if (!value) return '-';
+    try {
+      return new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+    } catch (err) {
+      return '-';
+    }
+  };
+
+  const getAvailableTotal = () => {
+    if (!selectedStockItem) {
+      return null;
+    }
+
+    if (isSerializedItem(selectedStockItem)) {
+      if (currentStockData) {
+        return currentStockData.available?.serialized?.length ?? 0;
+      }
+      return selectedStockItem.stock ? selectedStockItem.stock.length : 0;
+    }
+
+    if (isGenericItem(selectedStockItem)) {
+      if (currentStockData) {
+        return (currentStockData.available?.generic || []).reduce(
+          (sum, entry) => sum + (parseInt(entry.quantity, 10) || 0),
+          0
+        );
+      }
+
+      return selectedStockItem.stock
+        ? selectedStockItem.stock.reduce((total, stock) => total + parseInt(stock.quantity, 10), 0)
+        : 0;
+    }
+
+    return currentStockData ? 0 : null;
+  };
+
+  const getAssignedTotal = () => {
+    if (!selectedStockItem) {
+      return null;
+    }
+
+    if (currentStockData) {
+      if (isSerializedItem(selectedStockItem)) {
+        return (currentStockData.assigned || []).reduce(
+          (sum, entry) => sum + (entry.serializedItems?.length || 0),
+          0
+        );
+      }
+
+      if (isGenericItem(selectedStockItem)) {
+        return (currentStockData.assigned || []).reduce(
+          (sum, entry) => sum + (entry.genericQuantity || 0),
+          0
+        );
+      }
+
+      return 0;
+    }
+
+    return isSerializedItem(selectedStockItem) || isGenericItem(selectedStockItem) ? 0 : null;
+  };
+
+  const groupedStockHistory = useMemo(() => {
+    if (!stockHistory || stockHistory.length === 0 || !selectedStockItem) return [];
+
+    const groups = new Map();
+    const serializedView = isSerializedItem(selectedStockItem);
+
+    stockHistory.forEach((entry, index) => {
+      const dateObj = entry.addedDate ? new Date(entry.addedDate) : null;
+      const dateKey = dateObj ? dateObj.toISOString().split('T')[0] : `unknown-${index}`;
+
+      if (!groups.has(dateKey)) {
+        groups.set(dateKey, { entries: [], dateObj });
+      }
+      groups.get(dateKey).entries.push(entry);
+    });
+
+    return Array.from(groups.entries())
+      .map(([key, value], idx) => {
+        const totalQuantity = value.entries.reduce(
+          (sum, entry) => sum + (Number(entry.quantity) || 0),
+          0
+        );
+        const serialNumbers = serializedView
+          ? value.entries.map(entry => entry.serialNumber).filter(Boolean)
+          : [];
+        const remarks = Array.from(
+          new Set(value.entries.map(entry => entry.remark).filter(Boolean))
+        );
+
+        return {
+          key: `${key}-${idx}`,
+          dateKey: key,
+          dateObj: value.dateObj,
+          totalQuantity,
+          serialNumbers,
+          remarks,
+          entries: value.entries
+        };
+      })
+      .sort((a, b) => {
+        const aTime = a.dateObj ? a.dateObj.getTime() : 0;
+        const bTime = b.dateObj ? b.dateObj.getTime() : 0;
+        return bTime - aTime;
+      });
+  }, [stockHistory, selectedStockItem]);
+
+  const toggleHistoryGroup = (key) => {
+    setExpandedHistoryGroups(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
   };
 
   // Open add stock modal
@@ -308,9 +525,27 @@ const handleRefresh = () => {
     return 0;
   };
 
-  const sortByPrice = (a, b) => {
-    if (a.salePrice < b.salePrice) return sortOrder === 'asc' ? -1 : 1;
-    if (a.salePrice > b.salePrice) return sortOrder === 'asc' ? 1 : -1;
+  const sortByCustomerPrice = (a, b) => {
+    const priceA = a.pricing?.customerPrice || 0;
+    const priceB = b.pricing?.customerPrice || 0;
+    if (priceA < priceB) return sortOrder === 'asc' ? -1 : 1;
+    if (priceA > priceB) return sortOrder === 'asc' ? 1 : -1;
+    return 0;
+  };
+
+  const sortByDealerPrice = (a, b) => {
+    const priceA = a.pricing?.dealerPrice || 0;
+    const priceB = b.pricing?.dealerPrice || 0;
+    if (priceA < priceB) return sortOrder === 'asc' ? -1 : 1;
+    if (priceA > priceB) return sortOrder === 'asc' ? 1 : -1;
+    return 0;
+  };
+
+  const sortByDistributorPrice = (a, b) => {
+    const priceA = a.pricing?.distributorPrice || 0;
+    const priceB = b.pricing?.distributorPrice || 0;
+    if (priceA < priceB) return sortOrder === 'asc' ? -1 : 1;
+    if (priceA > priceB) return sortOrder === 'asc' ? 1 : -1;
     return 0;
   };
 
@@ -323,7 +558,7 @@ const handleRefresh = () => {
   };
 
   // Choose sort function based on sortField
-  const sortFunction = sortField === 'price' ? sortByPrice : sortField === 'stock' ? sortByStock : sortByName;
+  const sortFunction = sortField === 'customerPrice' ? sortByCustomerPrice : sortField === 'dealerPrice' ? sortByDealerPrice : sortField === 'distributorPrice' ? sortByDistributorPrice : sortField === 'stock' ? sortByStock : sortByName;
 
     // Sort each group
     serializedItems.sort(sortFunction);
@@ -414,86 +649,26 @@ const handleRefresh = () => {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">S.NO</th>
-              <th
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none"
-                onClick={() => {
-                  if (sortField === 'name') {
-                    setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-                  } else {
-                    setSortField('name');
-                    setSortOrder('asc');
-                  }
-                }}
-                title="Sort by Name"
-              >
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 NAME
-                <span className="inline-block ml-1">
-              {sortField === 'name' ? (
-                sortOrder === 'asc' ? (
-                  <LuArrowDownUp className="inline h-4 w-4 text-gray-600" />
-                ) : (
-                  <LuArrowUpDown className="inline h-4 w-4 text-gray-600" />
-                )
-              ) : (
-                <LuArrowDownUp className="inline h-4 w-4 text-gray-400" />
-              )}
-                </span>
               </th>
                   {/* <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">TYPE</th> */}
                   {/* <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BRANCH</th> */}
                   {/* <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">UNIT</th> */}
-                  <th
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none"
-                    onClick={() => {
-                      if (sortField === 'price') {
-                        setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-                      } else {
-                        setSortField('price');
-                        setSortOrder('asc');
-                      }
-                    }}
-                    title="Sort by Price"
-                  >
-                    PRICE
-                    <span className="inline-block ml-1">
-                      {sortField === 'price' ? (
-                        sortOrder === 'asc' ? (
-                          <LuArrowDownUp className="inline h-4 w-4 text-gray-600" />
-                        ) : (
-                          <LuArrowUpDown className="inline h-4 w-4 text-gray-600" />
-                        )
-                      ) : (
-                        <LuArrowDownUp className="inline h-4 w-4 text-gray-400" />
-                      )}
-                    </span>
+                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    ₹ CUSTOMER
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    ₹ DEALER
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    ₹ DISTRIBUTOR
                   </th>
                   {user.role === 'admin' && (
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PURCHASE PRICE</th>
                   )}
-                  <th
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none"
-                    onClick={() => {
-                      if (sortField === 'stock') {
-                        setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-                      } else {
-                        setSortField('stock');
-                        setSortOrder('asc');
-                      }
-                    }}
-                    title="Sort by Stock"
-                  >
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     STOCK
-                    <span className="inline-block ml-1">
-                      {sortField === 'stock' ? (
-                        sortOrder === 'asc' ? (
-                          <LuArrowDownUp className="inline h-4 w-4 text-gray-600" />
-                        ) : (
-                          <LuArrowUpDown className="inline h-4 w-4 text-gray-600" />
-                        )
-                      ) : (
-                        <LuArrowDownUp className="inline h-4 w-4 text-gray-400" />
-                      )}
-                    </span>
                   </th>
                   {/* <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ACTIONS</th> */}
                 </tr>
@@ -510,8 +685,6 @@ const handleRefresh = () => {
                     getStockDisplay={getStockDisplay}
                     openViewStockModal={() => openViewStockModal(item)}
                     openAddStockModal={() => openAddStockModal(item)}
-                    isExpanded={expandedRowId === item.id}
-                    toggleExpanded={() => toggleRowExpansion(item.id)}
                   />
                 ))}
               </tbody>
@@ -527,68 +700,364 @@ const handleRefresh = () => {
         isOpen={isViewStockModalOpen}
         onClose={() => setIsViewStockModalOpen(false)}
         title={`Stock Details - ${selectedStockItem?.name || ''}`}
-        size="lg"
+        size="xl"
       >
         {selectedStockItem && (
           <div>
-            <div className="mb-4">
-              <h3 className="text-lg font-medium text-gray-900">
-                {selectedStockItem.itemType === 'serialized' ? 'Serial Numbers' : 'Stock Entries'}
-              </h3>
-              <p className="text-sm text-gray-500">
-                Total Stock: {
-                  selectedStockItem.itemType === 'serialized' 
-                    ? (selectedStockItem.stock ? selectedStockItem.stock.length : 0)
-                    : (selectedStockItem.stock ? selectedStockItem.stock.reduce((total, stock) => total + parseInt(stock.quantity, 10), 0) : 0)
-                } {selectedStockItem.unit}
+            <div className="mb-4 flex justify-between items-start">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Stock Overview
+                </h3>
+                <p className="text-sm text-gray-500">
+                Current Available Stock:{' '}
+                {(() => {
+                  const availableTotal = getAvailableTotal();
+                  if (availableTotal === null || availableTotal === undefined) {
+                    return '...';
+                  }
+                  const unitLabel = selectedStockItem.unit || (isSerializedItem(selectedStockItem) ? 'pcs' : '');
+                  return `${availableTotal} ${unitLabel}`.trim();
+                })()}
               </p>
+              {(() => {
+                const assignedTotal = getAssignedTotal();
+                if (assignedTotal === null || assignedTotal === undefined) {
+                  return null;
+                }
+                const unitLabel = selectedStockItem.unit || (isSerializedItem(selectedStockItem) ? 'pcs' : '');
+                return (
+                  <p className="text-sm text-gray-500">
+                    Assigned to Technicians: {assignedTotal} {unitLabel}
+                  </p>
+                );
+              })()}
+                <p className="text-sm text-gray-400 mt-1">
+                  Switch between current allocation and stock addition history.
+                </p>
+              </div>
+
+              {/* Refresh and Add Stock Buttons */}
+              <div className="flex items-center space-x-2">
+                {/* Refresh Button */}
+                <button
+                  onClick={handleRefreshStockData}
+                  disabled={refreshingStock}
+                  className={`p-2 rounded-md transition-colors ${
+                    refreshingStock
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-teal-100 text-teal-600 hover:bg-teal-200'
+                  }`}
+                  title="Refresh stock data"
+                >
+                  <FiRefreshCw
+                    className={`w-4 h-4 ${refreshingStock ? 'animate-spin' : ''}`}
+                  />
+                </button>
+
+                {/* Add Stock Button */}
+                {user.role === 'manager' && selectedStockItem.itemType !== 'service' && (
+                  <button
+                    onClick={() => {
+                      openAddStockModal(selectedStockItem);
+                    }}
+                    className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-md font-medium flex items-center gap-2"
+                  >
+                    <FiPlus size={18} />
+                    Add Stock
+                  </button>
+                )}
+              </div>
             </div>
-            
-            {selectedStockItem.stock && selectedStockItem.stock.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sr No.</th>
-                      {selectedStockItem.itemType === 'serialized' && (
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Serial Number</th>
-                      )}
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date Added</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Remark</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {selectedStockItem.stock.map((stockItem, index) => (
-                      <tr key={selectedStockItem.itemType === 'serialized' ? stockItem.serialNumber : index}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{index + 1}</td>
-                        {selectedStockItem.itemType === 'serialized' && (
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{stockItem.serialNumber}</td>
-                        )}
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{stockItem.quantity}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {new Date(stockItem.date).toLocaleDateString()}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-500 max-w-xs">
-                          <div className="truncate" title={stockItem.remark || 'No remark'}>
-                            {stockItem.remark || '-'}
+
+            <div className="border-b border-gray-200 mb-4">
+              <nav className="-mb-px flex space-x-4">
+                <button
+                  type="button"
+                  onClick={() => setActiveStockTab('current')}
+                  className={`px-3 py-2 text-sm font-medium border-b-2 ${
+                    activeStockTab === 'current'
+                      ? 'border-teal-500 text-teal-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Current Stock
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveStockTab('history')}
+                  className={`px-3 py-2 text-sm font-medium border-b-2 ${
+                    activeStockTab === 'history'
+                      ? 'border-teal-500 text-teal-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Stock History
+                </button>
+              </nav>
+            </div>
+
+            {activeStockTab === 'current' ? (
+              <div>
+                {currentStockLoading ? (
+                  <div className="text-center py-8 text-gray-500">
+                    Loading current stock details...
+                  </div>
+                ) : currentStockError ? (
+                  <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-md">
+                    {currentStockError}
+                  </div>
+                ) : currentStockData ? (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                      <h4 className="text-base font-semibold text-gray-900">Available in Branch</h4>
+                      <p className="text-sm text-gray-500 mb-3">
+                        {(() => {
+                          const total = getAvailableTotal();
+                          const unitLabel = selectedStockItem.unit || (isSerializedItem(selectedStockItem) ? 'pcs' : '');
+                          return `Total Available: ${total !== null ? total : 0} ${unitLabel}`.trim();
+                        })()}
+                      </p>
+                      {isSerializedItem(selectedStockItem) ? (
+                        currentStockData.available?.serialized?.length ? (
+                          <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                            {currentStockData.available.serialized.map((entry, index) => (
+                              <div
+                                key={`${entry.serialNumber || 'serial'}-${index}`}
+                                className="bg-white border border-gray-200 rounded-md p-3"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="font-medium text-gray-900">S/N: {entry.serialNumber}</span>
+                                  <span className="text-xs text-gray-500">
+                                    {entry.date ? new Date(entry.date).toLocaleDateString() : '-'}
+                                  </span>
+                                </div>
+                                {entry.remark && (
+                                  <p className="text-xs text-gray-500 mt-1">
+                                    Remark: {entry.remark}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
                           </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        ) : (
+                          <p className="text-sm text-gray-500">
+                            No serialized stock currently available in branch.
+                          </p>
+                        )
+                      ) : (
+                        currentStockData.available?.generic?.length ? (
+                          <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                            {currentStockData.available.generic.map((entry, index) => (
+                              <div
+                                key={`generic-${index}`}
+                                className="bg-white border border-gray-200 rounded-md p-3"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="font-medium text-gray-900">
+                                    {entry.quantity} {selectedStockItem.unit}
+                                  </span>
+                                  <span className="text-xs text-gray-500">
+                                    {entry.date ? new Date(entry.date).toLocaleDateString() : '-'}
+                                  </span>
+                                </div>
+                                {entry.remark && (
+                                  <p className="text-xs text-gray-500 mt-1">
+                                    Remark: {entry.remark}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-500">
+                            No generic stock currently available in branch.
+                          </p>
+                        )
+                      )}
+                    </div>
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                      <h4 className="text-base font-semibold text-gray-900">Assigned to Technicians</h4>
+                      <p className="text-sm text-gray-500 mb-3">
+                        {(() => {
+                          const assigned = getAssignedTotal();
+                          const unitLabel = selectedStockItem.unit || (isSerializedItem(selectedStockItem) ? 'pcs' : '');
+                          return `Total Assigned: ${assigned !== null ? assigned : 0} ${unitLabel}`.trim();
+                        })()}
+                      </p>
+                      {currentStockData.assigned?.length ? (
+                        <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                          {currentStockData.assigned.map((entry, index) => (
+                            <div
+                              key={entry.technicianId || index}
+                              className="bg-white border border-gray-200 rounded-md p-3"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <p className="font-medium text-gray-900">
+                                    {entry.technicianName}
+                                  </p>
+                                  {entry.username && (
+                                    <p className="text-xs text-gray-500">@{entry.username}</p>
+                                  )}
+                                </div>
+                                <div className="text-right text-sm font-semibold text-gray-700">
+                                  {isSerializedItem(selectedStockItem)
+                                    ? `${entry.serializedItems?.length || 0} pcs`
+                                    : `${entry.genericQuantity || 0} ${selectedStockItem.unit || ''}`
+                                  }
+                                </div>
+                              </div>
+                              {isSerializedItem(selectedStockItem) && entry.serializedItems?.length > 0 && (
+                                <div className="mt-2 space-y-1">
+                                  {entry.serializedItems.map((serialItem, serialIndex) => (
+                                    <div
+                                      key={`${entry.technicianId || index}-${serialItem.serialNumber || serialIndex}`}
+                                      className="flex items-center justify-between text-xs text-gray-600 bg-gray-50 rounded px-2 py-1"
+                                    >
+                                      <span>S/N: {serialItem.serialNumber}</span>
+                                      <span>
+                                        {serialItem.assignedAt
+                                          ? formatDateTime(serialItem.assignedAt)
+                                          : '-'}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-500">
+                          No stock is currently assigned to technicians.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-center py-8 text-gray-500">
+                    No current stock data available.
+                  </p>
+                )}
               </div>
             ) : (
-              <div className="text-center py-8 text-gray-500">
-                No stock entries found for this product in your branch.
+              <div>
+                {loadingHistory ? (
+                  <div className="text-center py-8 text-gray-500">
+                    Loading stock history...
+                  </div>
+                ) : groupedStockHistory.length > 0 ? (
+                  <div className="space-y-3">
+                      {groupedStockHistory.map(group => {
+                        const isExpanded = !!expandedHistoryGroups[group.key];
+                        const dateLabel = group.dateObj
+                          ? group.dateObj.toLocaleDateString(undefined, { dateStyle: 'medium' })
+                          : group.dateKey.replace('unknown-', 'Unknown Date ');
+                        const primaryRemark = group.remarks[0] || 'No remark recorded.';
+
+                      return (
+                        <div
+                          key={group.key}
+                          className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => toggleHistoryGroup(group.key)}
+                            className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-100 transition-colors"
+                          >
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3 mb-1">
+                                <span className="font-semibold text-gray-800">{dateLabel}</span>
+                                <span className="text-xs bg-teal-100 text-teal-700 px-2 py-1 rounded-full">
+                                  +{group.totalQuantity} {itemUnit}
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-600 line-clamp-2">
+                                {primaryRemark}
+                              </p>
+                            </div>
+                            {expandedHistoryGroups[group.key] ? (
+                              <FiChevronDown className="w-5 h-5 text-gray-500" />
+                            ) : (
+                              <FiChevronRight className="w-5 h-5 text-gray-500" />
+                            )}
+                          </button>
+
+                          {isExpanded && (
+                            <div className="px-4 pb-4 space-y-3">
+                              {isSerializedItem(selectedStockItem) ? (
+                                <div>
+                                  {group.serialNumbers.length > 0 ? (
+                                    <>
+                                      <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+                                        Serial Numbers
+                                      </h4>
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                                        {group.serialNumbers.map((sn, idx) => (
+                                          <div
+                                            key={`${group.key}-serial-${idx}`}
+                                            className="bg-white border border-gray-200 rounded px-3 py-2 text-gray-700 font-mono text-sm"
+                                          >
+                                            {sn}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <p className="text-sm text-gray-500">No serial numbers recorded for this entry.</p>
+                                  )}
+                                </div>
+                              ) : (
+                                group.entries.map((entry, idx) => (
+                                  <div
+                                    key={`${group.key}-generic-${idx}`}
+                                    className="bg-white border border-gray-200 rounded p-3"
+                                  >
+                                    <div className="flex justify-between text-sm text-gray-600">
+                                      <span>
+                                        Quantity:{' '}
+                                        <span className="font-medium text-gray-800">
+                                          {entry.quantity} {itemUnit}
+                                        </span>
+                                      </span>
+                                      <span>
+                                        {entry.addedDate
+                                          ? new Date(entry.addedDate).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+                                          : '-'}
+                                      </span>
+                                    </div>
+                                    <p className="text-sm text-gray-600 mt-2">
+                                      Remark: {entry.remark || 'Not provided'}
+                                    </p>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    No stock additions found for this product in your branch.
+                  </div>
+                )}
               </div>
             )}
-            
+
             <div className="mt-6 flex justify-end">
               <button
                 type="button"
-                onClick={() => setIsViewStockModalOpen(false)}
+                onClick={() => {
+                  setIsViewStockModalOpen(false);
+                  setStockHistory([]);
+                  setCurrentStockData(null);
+                  setCurrentStockError(null);
+                  setExpandedHistoryGroups({});
+                  setActiveStockTab('current');
+                }}
                 className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none"
               >
                 Close
@@ -604,6 +1073,7 @@ const handleRefresh = () => {
   onClose={() => setIsAddStockModalOpen(false)}
   title={`Add Stock for ${selectedStockItem?.name || ''}`}
   size="lg"
+  zIndex="z-[60]"
 >
   {selectedStockItem && (
     <div>
@@ -656,6 +1126,7 @@ const handleRefresh = () => {
   onClose={() => setShowSaveConfirmation(false)}
   title="Confirm Save"
   size="md"
+  zIndex="z-[70]"
 >
   <div className="py-4">
     <div className="mb-6 flex items-center justify-center">
@@ -717,7 +1188,7 @@ const handleRefresh = () => {
 };
 
 // Form for adding serialized product stock
-const SerializedStockForm = ({ item, onClose, showNotification, onSuccess, onPrepareForSaving }) => {
+export const SerializedStockForm = ({ item, onClose, showNotification, onSuccess, onPrepareForSaving }) => {
     const [error, setError] = useState(null);
     const [remark, setRemark] = useState('');
     const [stockEntries, setStockEntries] = useState([
@@ -853,20 +1324,43 @@ const SerializedStockForm = ({ item, onClose, showNotification, onSuccess, onPre
       
       try {
         setCheckingSerial(true);
-        
+
         const response = await fetch(`${SummaryApi.checkSerialNumber.url}/${serialNumber}`, {
           method: SummaryApi.checkSerialNumber.method,
           credentials: 'include'
         });
-        
+
         const data = await response.json();
-        
+
         if (data.exists) {
+          // Build appropriate error message based on the type of conflict
+          let errorMessage = '';
+
+          if (data.assignedToTechnician) {
+            // Serial number assigned to technician
+            errorMessage = data.message || `Serial number is assigned to technician: ${data.technicianName}`;
+          } else if (data.usedInBill) {
+            // Serial number used in a bill
+            if (data.customerName) {
+              errorMessage = data.message || `Serial number used in bill for customer: ${data.customerName}`;
+            } else if (data.entityName) {
+              errorMessage = data.message || `Serial number used in bill for ${data.entityType}: ${data.entityName}`;
+            } else {
+              errorMessage = data.message || 'Serial number has been used in a bill';
+            }
+          } else if (data.item) {
+            // Serial number exists in inventory stock
+            errorMessage = `Serial number already exists for item: ${data.item.name}`;
+          } else {
+            // Fallback message
+            errorMessage = data.message || 'Serial number is not available';
+          }
+
           setSerialNumberStatus(prev => ({
             ...prev,
             [index]: {
               valid: false,
-              message: `Serial number already exists for item: ${data.item.name}`
+              message: errorMessage
             }
           }));
         } else {
@@ -874,7 +1368,7 @@ const SerializedStockForm = ({ item, onClose, showNotification, onSuccess, onPre
             ...prev,
             [index]: {
               valid: true,
-              message: 'Serial number is valid'
+              message: data.message || 'Serial number is valid'
             }
           }));
         }
@@ -1160,7 +1654,7 @@ const SerializedStockForm = ({ item, onClose, showNotification, onSuccess, onPre
   };
 
   // Form for adding generic product stock
-const GenericStockForm = ({ item, onClose, showNotification, onSuccess, onPrepareForSaving  }) => {
+export const GenericStockForm = ({ item, onClose, showNotification, onSuccess, onPrepareForSaving  }) => {
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(false);
     const [stockEntries, setStockEntries] = useState([
@@ -1382,14 +1876,13 @@ const GenericStockForm = ({ item, onClose, showNotification, onSuccess, onPrepar
 
 
 // Add this component at the end of your file (before export default)
-const ClickableTableRow = ({ item, index, user, handleDeleteItem, getItemTypeDisplay, getStockDisplay, openViewStockModal, openAddStockModal,  isExpanded, toggleExpanded }) => {
-  // const [expanded, setExpanded] = useState(false);
+const ClickableTableRow = ({ item, index, user, handleDeleteItem, getItemTypeDisplay, getStockDisplay, openViewStockModal, openAddStockModal }) => {
   
   return (
     <React.Fragment>
-      <tr 
+      <tr
         className="hover:bg-gray-50 cursor-pointer"
-        onClick={toggleExpanded}
+        onClick={() => openViewStockModal(item)}
       >
         <td className="px-6 py-4 whitespace-nowrap">
           <div className={`w-8 h-8 rounded-full flex items-center justify-center  font-medium ${
@@ -1418,7 +1911,15 @@ const ClickableTableRow = ({ item, index, user, handleDeleteItem, getItemTypeDis
           {item.branch?.name || '-'}
         </td> */}
         {/* <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.unit || '-'}</td> */}
-        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">₹{item.salePrice}</td>
+        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
+          ₹{item.pricing?.customerPrice || 0}
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
+          ₹{item.pricing?.dealerPrice || 0}
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
+          ₹{item.pricing?.distributorPrice || 0}
+        </td>
         {user.role === 'admin' && (
           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">₹{item.purchasePrice || '-'}</td>
         )}
@@ -1466,33 +1967,6 @@ const ClickableTableRow = ({ item, index, user, handleDeleteItem, getItemTypeDis
           </div>
         </td> */}
       </tr>
-      
-      {/* Expandable row for action buttons */}
-      {isExpanded && (
-        <tr className="bg-gray-50">
-          <td colSpan={user.role === 'admin' ? 9 : 8} className="px-6 py-4 border-b">
-            <div className="flex space-x-3">
-              {item.itemType !== 'service' && (
-                <button
-                  onClick={() => openViewStockModal()}
-                  className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-                >
-                  View Details
-                </button>
-              )}
-              
-              {user.role === 'manager' && item.itemType !== 'service' && (
-                <button
-                  onClick={() => openAddStockModal()}
-                  className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-teal-500 hover:bg-teal-600"
-                >
-                  Add Stock
-                </button>
-              )}
-            </div>
-          </td>
-        </tr>
-      )}
     </React.Fragment>
   );
 };

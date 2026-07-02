@@ -2,12 +2,43 @@ import React, { useState, useRef, useEffect } from 'react';
 import { FiX, FiUser, FiCalendar, FiMapPin, FiInfo, FiArrowLeft, FiAlertCircle } from 'react-icons/fi';
 import SummaryApi from '../../common';
 import { useAuth } from '../../context/AuthContext';
+import { useNotification } from '../../context/NotificationContext';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import { useNavigate } from 'react-router-dom';
 
+// Ensure global modal registry exists
+if (!window.__modalRegistry) {
+  window.__modalRegistry = new Set();
+}
+
 const TransferProjectModal = ({ isOpen, onClose, project, onProjectTransferred }) => {
   const { user } = useAuth();
+  const { showNotification } = useNotification();
   const navigate = useNavigate();
+
+  // Modal registry setup
+  const modalId = useRef(Math.random().toString(36).substr(2, 9));
+  const numericZIndex = useRef(50); // z-50 from the modal div
+
+  // Double ESC and double click states
+  const [escPressCount, setEscPressCount] = useState(0);
+  const [escPressTimer, setEscPressTimer] = useState(null);
+  const [clickCount, setClickCount] = useState(0);
+  const [clickTimer, setClickTimer] = useState(null);
+
+  // Check if this modal is the topmost modal
+  const isTopmostModal = () => {
+    if (!window.__modalRegistry || window.__modalRegistry.size === 0) return true;
+
+    let highestZIndex = 0;
+    window.__modalRegistry.forEach(modal => {
+      if (modal.zIndex > highestZIndex) {
+        highestZIndex = modal.zIndex;
+      }
+    });
+
+    return numericZIndex.current >= highestZIndex;
+  };
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [transferRemark, setTransferRemark] = useState('');
@@ -18,6 +49,8 @@ const TransferProjectModal = ({ isOpen, onClose, project, onProjectTransferred }
   const [reasonText, setReasonText] = useState('');
   const [showConfirmAccept, setShowConfirmAccept] = useState(false);
   const [showConfirmReject, setShowConfirmReject] = useState(false);
+  const [showAcceptOptions, setShowAcceptOptions] = useState(false);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   
   const modalContentRef = useRef(null);
   
@@ -28,34 +61,91 @@ const TransferProjectModal = ({ isOpen, onClose, project, onProjectTransferred }
     }
   }, [isOpen, project]);
 
-  // Set up a click handler for backdrop click to close
+  // Register/unregister modal in global registry
   useEffect(() => {
-    const handleOutsideClick = (e) => {
-      // Check if click was outside modal content
-      if (modalContentRef.current && !modalContentRef.current.contains(e.target)) {
-        onClose();
-      }
+    if (isOpen) {
+      window.__modalRegistry.add({
+        id: modalId.current,
+        zIndex: numericZIndex.current
+      });
+    } else {
+      window.__modalRegistry.forEach(modal => {
+        if (modal.id === modalId.current) {
+          window.__modalRegistry.delete(modal);
+        }
+      });
+    }
+
+    return () => {
+      window.__modalRegistry.forEach(modal => {
+        if (modal.id === modalId.current) {
+          window.__modalRegistry.delete(modal);
+        }
+      });
     };
-    
-    // Check if ESC key was pressed
-    const handleEscapeKey = (e) => {
-      if (e.key === 'Escape') {
-        onClose();
+  }, [isOpen]);
+
+  // Reset ESC and click counters when modal opens/closes
+  useEffect(() => {
+    if (!isOpen) {
+      setEscPressCount(0);
+      setClickCount(0);
+      if (escPressTimer) clearTimeout(escPressTimer);
+      if (clickTimer) clearTimeout(clickTimer);
+    }
+  }, [isOpen]);
+
+  // Double ESC handler
+  useEffect(() => {
+    const handleEsc = (event) => {
+      if (event.key === 'Escape' && isOpen && isTopmostModal()) {
+        if (escPressCount === 0) {
+          setEscPressCount(1);
+          const timer = setTimeout(() => {
+            showNotification('info', 'To close the popup, press ESC twice', 3000);
+            setEscPressCount(0);
+          }, 800);
+          setEscPressTimer(timer);
+        } else if (escPressCount === 1) {
+          clearTimeout(escPressTimer);
+          setEscPressCount(0);
+          onClose();
+        }
       }
     };
 
-    // Add event listeners when modal opens
     if (isOpen) {
-      document.addEventListener('mousedown', handleOutsideClick);
-      document.addEventListener('keydown', handleEscapeKey);
+      document.addEventListener('keydown', handleEsc);
+      document.body.style.overflow = 'hidden';
     }
-    
-    // Remove event listeners when component unmounts or modal closes
+
     return () => {
-      document.removeEventListener('mousedown', handleOutsideClick);
-      document.removeEventListener('keydown', handleEscapeKey);
+      document.removeEventListener('keydown', handleEsc);
+      document.body.style.overflow = 'unset';
+      if (escPressTimer) clearTimeout(escPressTimer);
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, escPressCount, escPressTimer, showNotification]);
+
+  // Handle overlay click - requires double click to close
+  const handleOverlayClick = (e) => {
+    // Only handle if clicked directly on overlay (not on modal content)
+    if (e.target === e.currentTarget) {
+      if (!isTopmostModal()) return;
+
+      if (clickCount === 0) {
+        setClickCount(1);
+        const timer = setTimeout(() => {
+          showNotification('info', 'To close the popup, click twice on the background', 3000);
+          setClickCount(0);
+        }, 800);
+        setClickTimer(timer);
+      } else if (clickCount === 1) {
+        if (clickTimer) clearTimeout(clickTimer);
+        setClickCount(0);
+        onClose();
+      }
+    }
+  };
 
   // Handlers for reason popup
   const openReasonPopup = (type) => {
@@ -102,16 +192,9 @@ const TransferProjectModal = ({ isOpen, onClose, project, onProjectTransferred }
       });
       const data = await response.json();
       if (data.success) {
-        if (onProjectTransferred) {
-          const updatedProject = {
-            ...project,
-            status: 'rejected'
-          };
-          onProjectTransferred(updatedProject);
-        }
-        setShowConfirmReject(false);
-        closeReasonPopup();
-        onClose();
+        // Clear cache and reload page
+        localStorage.removeItem('transferredProjectsData');
+        window.location.reload();
       } else {
         setError(data.message || 'Failed to reject transfer request');
         setShowConfirmReject(false);
@@ -148,20 +231,51 @@ const TransferProjectModal = ({ isOpen, onClose, project, onProjectTransferred }
       const data = await response.json();
 
       if (data.success) {
-        if (onProjectTransferred) {
-          const updatedProject = {
-            ...project,
-            status: 'transferred'
-          };
-          onProjectTransferred(updatedProject);
-        }
-        navigate('/work-orders');
+        // Clear cache and reload page
+        localStorage.removeItem('transferredProjectsData');
+        window.location.reload();
       } else {
         setError(data.message || 'Failed to accept transfer request');
       }
     } catch (err) {
       setError('Server error. Please try again.');
       console.error('Error accepting transfer:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handler for closing project
+  const handleCloseProject = async () => {
+    setShowCloseConfirm(false);
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(SummaryApi.closeProject.url, {
+        method: SummaryApi.closeProject.method,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          customerId: project.customerId,
+          orderId: project.orderId
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Clear cache and reload page
+        localStorage.removeItem('transferredProjectsData');
+        window.location.reload();
+      } else {
+        setError(data.message || 'Failed to close project');
+      }
+    } catch (err) {
+      setError('Server error. Please try again.');
+      console.error('Error closing project:', err);
     } finally {
       setLoading(false);
     }
@@ -272,9 +386,9 @@ const TransferProjectModal = ({ isOpen, onClose, project, onProjectTransferred }
   const stopRequest = getStopRequestEntry();
   
   return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50 p-2 overflow-auto">
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-50 p-2 overflow-auto" onClick={handleOverlayClick}>
       <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden"
-       ref={modalContentRef}>
+       ref={modalContentRef} onClick={(e) => e.stopPropagation()}>
         <div className="sticky top-0 bg-white p-4 border-b flex justify-between items-center">
           <h2 className="text-xl font-semibold flex items-center">
             Transfer Request
@@ -406,13 +520,13 @@ const TransferProjectModal = ({ isOpen, onClose, project, onProjectTransferred }
                   onClick={() => openReasonPopup('reject')}
                   className="px-6 py-2 bg-red-500 text-white rounded-md hover:bg-red-600"
                 >
-                  Reject Transfer Request
+                   Reject Job Stop Request
                 </button>
                 <button
-                  onClick={() => setShowConfirmAccept(true)}
+                  onClick={() => setShowAcceptOptions(true)}
                   className="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"
                 >
-                  Accept Transfer Request
+                  Accept Job Stop Request
                 </button>
               </div>
 
@@ -523,6 +637,102 @@ const TransferProjectModal = ({ isOpen, onClose, project, onProjectTransferred }
                           className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600"
                         >
                           Yes
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Accept Options Popup */}
+              {showAcceptOptions && (
+                <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-60 p-2 overflow-auto">
+                  <div className="bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden">
+                    <div className="sticky top-0 bg-white p-4 border-b flex justify-between items-center">
+                      <h2 className="text-xl font-semibold">
+                        Choose Action
+                      </h2>
+                      <button
+                        onClick={() => setShowAcceptOptions(false)}
+                        className="p-1 rounded-full hover:bg-gray-100"
+                      >
+                        <FiX size={24} />
+                      </button>
+                    </div>
+                    <div className="p-6">
+                      <p className="mb-6 text-gray-700">What would you like to do with this transfer request?</p>
+                      <div className="space-y-4">
+                        <button
+                          onClick={() => {
+                            setShowAcceptOptions(false);
+                            setShowConfirmAccept(true);
+                          }}
+                          className="w-full p-4 border-2 border-blue-500 rounded-lg hover:bg-blue-50 text-left transition-colors"
+                        >
+                          <div className="font-semibold text-blue-600 mb-1">Accept Transfer</div>
+                          <div className="text-sm text-gray-600">Create a new work order for reassignment to another technician</div>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowAcceptOptions(false);
+                            setShowCloseConfirm(true);
+                          }}
+                          className="w-full p-4 border-2 border-orange-500 rounded-lg hover:bg-orange-50 text-left transition-colors"
+                        >
+                          <div className="font-semibold text-orange-600 mb-1">Close Project</div>
+                          <div className="text-sm text-gray-600">Mark this project as closed. No further work will be done.</div>
+                        </button>
+                      </div>
+                      <div className="mt-6 flex justify-end">
+                        <button
+                          onClick={() => setShowAcceptOptions(false)}
+                          className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Close Project Confirmation Popup */}
+              {showCloseConfirm && (
+                <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex justify-center items-center z-60 p-2 overflow-auto">
+                  <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+                    <div className="sticky top-0 bg-white p-4 border-b flex justify-between items-center">
+                      <h2 className="text-xl font-semibold flex items-center">
+                        <FiAlertCircle className="mr-2 text-orange-500" />
+                        Confirm Close Project
+                      </h2>
+                      <button
+                        onClick={() => setShowCloseConfirm(false)}
+                        className="p-1 rounded-full hover:bg-gray-100"
+                      >
+                        <FiX size={24} />
+                      </button>
+                    </div>
+                    <div className="p-6">
+                      <p className="mb-4 text-gray-700">
+                        {user.firstName} {user.lastName}, are you sure you want to close this project?
+                      </p>
+                      <div className="bg-orange-50 border border-orange-200 rounded-md p-3 mb-4">
+                        <p className="text-sm text-orange-800">
+                          <strong>Warning:</strong> This action will mark the project as closed and no further work will be done on it.
+                        </p>
+                      </div>
+                      <div className="flex justify-end space-x-4">
+                        <button
+                          onClick={() => setShowCloseConfirm(false)}
+                          className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400"
+                        >
+                          No, Go Back
+                        </button>
+                        <button
+                          onClick={handleCloseProject}
+                          className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600"
+                        >
+                          Yes, Close Project
                         </button>
                       </div>
                     </div>

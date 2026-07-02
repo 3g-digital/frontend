@@ -1,5 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
 
@@ -27,6 +28,7 @@ import WorkOrdersPage from './pages/workOrders/WorkOrdersPage';
 import TechnicianDashboard from './pages/technician/TechnicianDashboard';
 import TransferHistoryTable from './pages/manager/TransferHistoryTable';
 import ManagerProjectDashboard from './pages/manager/ManagerProjectDashboard';
+import PendingApprovals from './pages/manager/PendingApprovals';
 import InventoryManagement from './pages/inventory/InventoryManagement';
 import TransferredProjectsPage from './pages/manager/TransferredProjectsPage';
 import ReturnedInventoryTable from './pages/manager/ReturnedInventoryTable';
@@ -35,7 +37,12 @@ import Test from './pages/test';
 import ManagerDetail from './pages/users/ManagerDetail';
 import BranchDetails from './pages/branches/BranchDetails';
 import InventoryPage from './pages/inventory/InventoryPage';
+import ServicesPage from './pages/services/ServicesPage';
 import ResetDefaultPage from './pages/ResetDefaultPage';
+import SettingsPage from './pages/SettingsPage';
+
+// Settings Pages
+import BankAccountsPage from './pages/settings/BankAccountsPage';
 
 // Protected route component
 const ProtectedRoute = ({ children, allowedRoles = [] }) => {
@@ -57,11 +64,69 @@ const ProtectedRoute = ({ children, allowedRoles = [] }) => {
   return children;
 };
 
+// React 19 metadata approach: render <title> & <link rel="icon"> anywhere.
+// React hoists them to <head> automatically (no Helmet needed).
+function RouteHead() {
+  const { pathname } = useLocation();
+
+  // Defaults
+  let title = "3G Digital CRM";
+  let icon  = "/favicon.ico";
+
+  // Map your routes to panels — tweak to match your real paths
+  if (
+    pathname.startsWith("/branches") ||
+    pathname.startsWith("/users/managers") ||
+    pathname.startsWith("/users/branches/technicians") ||
+    pathname.startsWith("/inventory-items")
+  ) {
+    title = "3G Digital - Admin Panel";
+    icon  = "/admin.ico";
+  } else if (
+    pathname.startsWith("/users/manager/technicians") ||
+    pathname.startsWith("/contacts") ||
+    pathname.startsWith("/work-orders") ||
+    pathname.startsWith("/manager-dashboard") ||
+    pathname.startsWith("/pending-approvals") ||
+    pathname.startsWith("/transferred-projects") ||
+    pathname.startsWith("/inventory") ||
+    pathname.startsWith("/returned-inventory") ||
+    pathname.startsWith("/replacement-warranty") ||
+    pathname.startsWith("/inventory-transfer-history")
+  ) {
+    title = "3G Digital - Manager Panel";
+    icon  = "/manager.ico";
+  } else if (
+    pathname.startsWith("/technician-dashboard") ||
+    pathname.startsWith("/work-orders") ||
+    pathname.startsWith("/technician")
+  ) {
+    title = "3G Digital - Engineer Panel";
+    icon  = "/engineer.ico";
+  } 
+
+  // Cache-bust so browsers don't stick to an old favicon
+  const bust = Date.now();
+  const href = `${icon}?v=${bust}`;
+
+  // Return head tags directly — React 19 hoists them into <head>
+  return (
+    <>
+      <title>{title}</title>
+      <link rel="icon" href={href} />
+      {/* optional for mobile/pinned tiles */}
+      <link rel="apple-touch-icon" href={href} />
+    </>
+  );
+}
+
+
 function App() {
   return (
     <AuthProvider>
       <NotificationProvider>
       <Router>
+         <RouteHead /> 
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           
@@ -125,9 +190,18 @@ function App() {
             
             {/* Technician Users */}
             <Route 
-  path="users/technicians" 
+  path="users/branches/technicians" 
   element={
-    <ProtectedRoute allowedRoles={['admin', 'manager']}>
+    <ProtectedRoute allowedRoles={['admin']}>
+      <TechnicianUsers />
+    </ProtectedRoute>
+  } 
+/>
+
+         <Route 
+  path="users/manager/technicians" 
+  element={
+    <ProtectedRoute allowedRoles={['manager']}>
       <TechnicianUsers />
     </ProtectedRoute>
   } 
@@ -177,6 +251,15 @@ function App() {
               element={
                 <ProtectedRoute allowedRoles={['admin']}>
                   <InventoryPage />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="services"
+              element={
+                <ProtectedRoute allowedRoles={['admin', 'manager']}>
+                  <ServicesPage />
                 </ProtectedRoute>
               }
             />
@@ -244,11 +327,20 @@ function App() {
           }
         />
 
-        <Route 
-          path="manager-dashboard" 
+        <Route
+          path="manager-dashboard"
           element={
             <ProtectedRoute>
               <ManagerProjectDashboard/>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="pending-approvals"
+          element={
+            <ProtectedRoute allowedRoles={['manager']}>
+              <PendingApprovals/>
             </ProtectedRoute>
           }
         />
@@ -258,6 +350,26 @@ function App() {
           element={
             <ProtectedRoute allowedRoles={['technician']}>
               <TechnicianDashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Settings Routes */}
+        <Route
+          path="settings"
+          element={
+            <ProtectedRoute>
+              <SettingsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Admin Settings Routes */}
+        <Route
+          path="admin-settings/bank-accounts"
+          element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <BankAccountsPage />
             </ProtectedRoute>
           }
         />

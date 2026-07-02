@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { FiPhone, FiMail, FiMessageSquare, FiEdit2, FiUserPlus, FiCalendar } from 'react-icons/fi';
+import { FiPhone, FiMail, FiMessageSquare, FiEdit2, FiUserPlus, FiCalendar, FiHome } from 'react-icons/fi';
 import SummaryApi from '../../common';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import { useAuth } from '../../context/AuthContext';
 import Modal from '../../components/Modal';
+import ConvertTypeModal from '../../components/ConvertTypeModal';
 import { useNavigate } from 'react-router-dom';
 
 const statusColors = {
@@ -17,13 +18,14 @@ const projectTypes = [
   'CCTV Camera',
   'Attendance System',
   'Safe and Locks',
+  'Lift & Elevator Solutions',
   'Home/Office Automation',
   'IT & Networking Services',
   'Software & Website Development',
   'Custom'
 ];
 
-const LeadDetailModal = ({ isOpen, onClose, leadId, onLeadUpdated, onConvertSuccess, initialConvertMode = false }) => {
+const LeadDetailModal = ({ isOpen, onClose, leadId, onLeadUpdated, onConvertSuccess, initialConvertMode = false, conversionType = null, availableContacts = [] }) => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [lead, setLead] = useState(null);
@@ -37,8 +39,18 @@ const LeadDetailModal = ({ isOpen, onClose, leadId, onLeadUpdated, onConvertSucc
   
   // New state for the conversion form
   const [showConvertForm, setShowConvertForm] = useState(initialConvertMode);
+  const [showExistingCustomerForm, setShowExistingCustomerForm] = useState(false);
   const [projectType, setProjectType] = useState('');
   const [conversionRemark, setConversionRemark] = useState('');
+  const [showConvertTypeModal, setShowConvertTypeModal] = useState(false);
+
+  // Existing customer conversion form fields
+  const [existingCustomerData, setExistingCustomerData] = useState({
+    projectType: '',
+    installationDate: '',
+    installedBy: '',
+    remarks: ''
+  });
   
   const fetchLead = async () => {
     if (!leadId) return;
@@ -70,8 +82,21 @@ const LeadDetailModal = ({ isOpen, onClose, leadId, onLeadUpdated, onConvertSucc
   useEffect(() => {
     if (isOpen && leadId) {
       fetchLead();
-      // Set the convert form state based on the prop
-      setShowConvertForm(initialConvertMode);
+
+      // Set the appropriate conversion form based on conversionType
+      if (initialConvertMode && conversionType) {
+        if (conversionType === 'new_customer') {
+          setShowConvertForm(true);
+          setShowExistingCustomerForm(false);
+        } else if (conversionType === 'existing_customer') {
+          setShowConvertForm(false);
+          setShowExistingCustomerForm(true);
+        }
+      } else if (initialConvertMode) {
+        // Default to new customer form if no conversionType specified
+        setShowConvertForm(true);
+        setShowExistingCustomerForm(false);
+      }
     } else {
       // Reset state when modal closes
       setLead(null);
@@ -79,10 +104,17 @@ const LeadDetailModal = ({ isOpen, onClose, leadId, onLeadUpdated, onConvertSucc
       setRemarkText('');
       setRemarkSuccess(false);
       setShowConvertForm(false);
+      setShowExistingCustomerForm(false);
       setProjectType('');
       setConversionRemark('');
+      setExistingCustomerData({
+        projectType: '',
+        installationDate: '',
+        installedBy: '',
+        remarks: ''
+      });
     }
-  }, [isOpen, leadId, initialConvertMode]);
+  }, [isOpen, leadId, initialConvertMode, conversionType]);
   
   const handleAddRemark = async (e) => {
     e.preventDefault();
@@ -135,16 +167,42 @@ const LeadDetailModal = ({ isOpen, onClose, leadId, onLeadUpdated, onConvertSucc
   
   // Start the conversion process
   const handleStartConversion = () => {
-    setShowConvertForm(true);
+    setShowConvertTypeModal(true);
   };
   
   // Cancel the conversion process
   const handleCancelConversion = () => {
     setShowConvertForm(false);
+    setShowExistingCustomerForm(false);
     setProjectType('');
     setConversionRemark('');
+    setExistingCustomerData({
+      projectType: '',
+      installationDate: '',
+      installedBy: '',
+      remarks: ''
+    });
   };
   
+  // Handle convert type selection
+  const handleConvertTypeSelected = (convertType, convertedData) => {
+    if (convertType === 'new_customer') {
+      // For new customer conversion, show the project selection form
+      setShowConvertTypeModal(false);
+      setShowConvertForm(true);
+    } else if (convertType === 'existing_customer') {
+      // For existing customer conversion, show the existing customer form
+      setShowConvertTypeModal(false);
+      setShowExistingCustomerForm(true);
+    } else {
+      // For dealer/distributor, close modal and notify parent
+      if (onConvertSuccess) {
+        onConvertSuccess(leadId, convertedData);
+      }
+      onClose();
+    }
+  };
+
   // Complete the conversion process
   const handleConvertToCustomer = async (e) => {
     e.preventDefault();
@@ -173,29 +231,13 @@ const LeadDetailModal = ({ isOpen, onClose, leadId, onLeadUpdated, onConvertSucc
       const data = await response.json();
       
       if (data.success) {
-        // If conversion was successful, create a work order for the new customer
-        try {
-          // Note: assuming the conversion API returns the new customer data
-          const newCustomerId = data.data._id;
-          
-          // Create work order using the same project type and remark
-          await createWorkOrder(newCustomerId, projectType, conversionRemark);
-          
-          // Close modal and notify parent
-          if (onConvertSuccess) {
-            onConvertSuccess(leadId, data.data);
-          }
-          onClose();
-
-          navigate('/work-orders');
-        } catch (workOrderErr) {
-          console.error('Error creating work order after conversion:', workOrderErr);
-          // Still consider the conversion successful even if work order failed
-          if (onConvertSuccess) {
-            onConvertSuccess(leadId, data.data);
-          }
-          onClose();
+        // Close modal and notify parent
+        if (onConvertSuccess) {
+          onConvertSuccess(leadId, data.data);
         }
+        onClose();
+
+        navigate('/work-orders');
       } else {
         setError(data.message || 'Failed to convert lead to customer');
       }
@@ -206,32 +248,91 @@ const LeadDetailModal = ({ isOpen, onClose, leadId, onLeadUpdated, onConvertSucc
       setConverting(false);
     }
   };
-  
-  // Helper function to create a work order
-  const createWorkOrder = async (customerId, projectType, initialRemark) => {
-    const response = await fetch(SummaryApi.createWorkOrder.url, {
-      method: SummaryApi.createWorkOrder.method,
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        customerId,
-        projectType,
-        initialRemark
-      })
-    });
-    
-    const data = await response.json();
-    
-    if (!data.success) {
-      console.error('Work order creation failed:', data.message);
-      throw new Error(data.message);
+
+  // Complete the existing customer conversion process
+  const handleConvertToExistingCustomer = async (e) => {
+    e.preventDefault();
+
+    if (!existingCustomerData.projectType) {
+      setError("Please select a project type");
+      return;
     }
-    
-    return data.data;
+
+    if (!existingCustomerData.installationDate) {
+      setError("Please select installation date");
+      return;
+    }
+
+    if (!existingCustomerData.installedBy) {
+      setError("Please select who installed the service");
+      return;
+    }
+
+    try {
+      setConverting(true);
+
+      // Convert lead directly to existing customer (like AddContactForm existing customer logic)
+      const convertResponse = await fetch(`${SummaryApi.convertToExistingCustomer.url}/${leadId}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          projectType: existingCustomerData.projectType,
+          installationDate: existingCustomerData.installationDate,
+          installedBy: existingCustomerData.installedBy,
+          remarks: existingCustomerData.remarks,
+          isExistingCustomer: true
+        })
+      });
+
+      const convertData = await convertResponse.json();
+
+      if (convertData.success) {
+        // Close modal and notify parent
+        if (onConvertSuccess) {
+          onConvertSuccess(leadId, convertData.data);
+        }
+        onClose();
+      } else {
+        setError(convertData.message || 'Failed to convert lead to existing customer');
+      }
+    } catch (err) {
+      setError('Server error. Please try again later.');
+      console.error('Error converting lead to existing customer:', err);
+    } finally {
+      setConverting(false);
+    }
   };
-  
+
+  // Helper function to update existing customer form data
+  const updateExistingCustomerData = (field, value) => {
+    setExistingCustomerData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  // Services and options for existing customer form
+  const services = [
+    { value: "", label: "Choose Service..." },
+    { value: "CCTV Camera", label: "CCTV Camera" },
+    { value: "Attendance System", label: "Attendance System" },
+    { value: "Safe and Locks", label: "Safe and Locks" },
+    { value: "Lift & Elevator Solutions", label: "Lift & Elevator Solutions" },
+    { value: "Home/Office Automation", label: "Home/Office Automation" },
+    { value: "IT & Networking Services", label: "IT & Networking Services" },
+    { value: "Software & Website Development", label: "Software & Website Development" },
+    { value: "Custom", label: "Custom" },
+  ];
+
+  const installedByOptions = [
+    { value: "", label: "Choose..." },
+    { value: "Our Company", label: "Our Company" },
+    { value: "Others", label: "Others" },
+  ];
+
   const handleEdit = () => {
     // This will be handled by parent component
     if (onClose) {
@@ -306,12 +407,12 @@ const LeadDetailModal = ({ isOpen, onClose, leadId, onLeadUpdated, onConvertSucc
                   </div>
                 )}
                 
-                {lead.email && (
+                {lead.firmName && (
                   <div className="flex items-start">
-                    <FiMail className="mt-1 mr-3 text-gray-500" />
+                    <FiHome className="mt-1 mr-3 text-gray-500" />
                     <div>
-                      <div className="text-sm text-gray-500">Email</div>
-                      <div>{lead.email}</div>
+                      <div className="text-sm text-gray-500">Firm Name</div>
+                      <div>{lead.firmName}</div>
                     </div>
                   </div>
                 )}
@@ -326,7 +427,7 @@ const LeadDetailModal = ({ isOpen, onClose, leadId, onLeadUpdated, onConvertSucc
                   </div>
                 )}
                 
-                {lead.age && (
+                {/* {lead.age && (
                   <div className="flex items-start">
                     <FiCalendar className="mt-1 mr-3 text-gray-500" />
                     <div>
@@ -334,7 +435,7 @@ const LeadDetailModal = ({ isOpen, onClose, leadId, onLeadUpdated, onConvertSucc
                       <div>{lead.age} years</div>
                     </div>
                   </div>
-                )}
+                )} */}
                 
                 {lead.branch && (
                   <div className="flex items-start">
@@ -357,13 +458,13 @@ const LeadDetailModal = ({ isOpen, onClose, leadId, onLeadUpdated, onConvertSucc
                   Edit Lead
                 </button> */}
                 
-                {!showConvertForm && (
+                {!showConvertForm && !showExistingCustomerForm && (
                   <button
                     onClick={handleStartConversion}
                     className="w-full py-2 px-4 bg-green-500 text-white rounded-md flex items-center justify-center hover:bg-green-600"
                   >
                     <FiUserPlus className="mr-2" />
-                    Convert to Customer
+                    Convert
                   </button>
                 )}
               </div>
@@ -374,7 +475,7 @@ const LeadDetailModal = ({ isOpen, onClose, leadId, onLeadUpdated, onConvertSucc
           {/* Right panel - either remarks or conversion form */}
           <div className="lg:col-span-2 bg-white rounded-lg overflow-hidden border border-gray-200">
             <div className="p-6">
-              {!showConvertForm ? (
+              {!showConvertForm && !showExistingCustomerForm ? (
                 /* Remarks & Follow-ups */
                 <>
                   <h2 className="text-xl font-semibold mb-6">Remarks & Follow-ups</h2>
@@ -482,7 +583,7 @@ const LeadDetailModal = ({ isOpen, onClose, leadId, onLeadUpdated, onConvertSucc
                     )}
                   </div>
                 </>
-              ) : (
+              ) : showConvertForm ? (
                 /* Convert to Customer Form */
                 <>
                   <div className="flex justify-between items-center mb-6">
@@ -556,7 +657,109 @@ const LeadDetailModal = ({ isOpen, onClose, leadId, onLeadUpdated, onConvertSucc
                     </div>
                   </form>
                 </>
-              )}
+              ) : showExistingCustomerForm ? (
+                /* Convert to Existing Customer Form */
+                <>
+                  <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-xl font-semibold">Convert to Existing Customer</h2>
+                    <button
+                      onClick={handleCancelConversion}
+                      className="text-gray-500 hover:text-gray-700"
+                    >
+                      ← Back to Lead Details
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleConvertToExistingCustomer}>
+                    <div className="space-y-6 mb-8">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Service Type*</label>
+                        <select
+                          value={existingCustomerData.projectType}
+                          onChange={(e) => updateExistingCustomerData('projectType', e.target.value)}
+                          className="w-full p-3 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          required
+                        >
+                          {services.map((service) => (
+                            <option key={service.value} value={service.value}>
+                              {service.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Installation Date*</label>
+                        <input
+                          type="date"
+                          value={existingCustomerData.installationDate}
+                          onChange={(e) => updateExistingCustomerData('installationDate', e.target.value)}
+                          className="w-full p-3 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Installed By*</label>
+                        <select
+                          value={existingCustomerData.installedBy}
+                          onChange={(e) => updateExistingCustomerData('installedBy', e.target.value)}
+                          className="w-full p-3 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          required
+                        >
+                          {installedByOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Remarks</label>
+                        <textarea
+                          value={existingCustomerData.remarks}
+                          onChange={(e) => updateExistingCustomerData('remarks', e.target.value)}
+                          className="w-full p-3 border rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          rows="4"
+                          placeholder="Additional notes about the service..."
+                        ></textarea>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-gray-200 pt-6">
+                      <div className="bg-indigo-50 p-4 rounded-md mb-6">
+                        <h3 className="font-medium text-indigo-800 mb-2">Existing Customer Service Addition</h3>
+                        <p className="text-sm text-indigo-700">
+                          Converting <strong>{lead.name}</strong> ({lead.phoneNumber}) to an existing customer service.
+                          The system will find the matching customer and add this service to their record.
+                        </p>
+                        <p className="text-sm text-indigo-700 mt-2">
+                          <strong>Note:</strong> This service will be automatically marked as "completed" since it's for an existing customer.
+                        </p>
+                      </div>
+
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={handleCancelConversion}
+                          className="mr-4 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                        >
+                          Cancel
+                        </button>
+
+                        <button
+                          type="submit"
+                          disabled={converting || !existingCustomerData.projectType || !existingCustomerData.installationDate || !existingCustomerData.installedBy}
+                          className="px-4 py-2 bg-indigo-500 text-white rounded-md hover:bg-indigo-600 disabled:opacity-50"
+                        >
+                          {converting ? 'Converting...' : 'Add Service to Existing Customer'}
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+                </>
+              ) : null}
             </div>
           </div>
         </div>
@@ -565,6 +768,13 @@ const LeadDetailModal = ({ isOpen, onClose, leadId, onLeadUpdated, onConvertSucc
           Lead not found
         </div>
       )}
+
+      <ConvertTypeModal
+        isOpen={showConvertTypeModal}
+        onClose={() => setShowConvertTypeModal(false)}
+        leadData={lead}
+        onConvertSuccess={handleConvertTypeSelected}
+      />
     </Modal>
   );
 };

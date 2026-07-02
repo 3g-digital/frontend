@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { FiPlus, FiTrash, FiSearch, FiCamera, FiSave } from 'react-icons/fi';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { FiPlus, FiTrash, FiSearch, FiCamera, FiSave, FiChevronDown, FiChevronRight, FiRefreshCw } from 'react-icons/fi';
 import { LuArrowUpDown } from "react-icons/lu";
 import { LuArrowDownUp } from "react-icons/lu";
 import Modal from '../../components/Modal';
@@ -8,17 +8,12 @@ import ConfirmationDialog from '../../components/ConfirmationDialog';
 import { useNotification } from '../../context/NotificationContext';
 import { useAuth } from '../../context/AuthContext';
 
-const SerializedProductsList = ({ searchTerm = '', branch = '' }) => {
+const SerializedProductsList = ({ searchTerm = '', branch = '', sortField = 'name', sortOrder = 'asc' }) => {
   const { user } = useAuth();
   const { showNotification } = useNotification();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  // const [searchTerm, setSearchTerm] = useState('');
-
-  // Sorting state
-  const [sortOrder, setSortOrder] = useState('asc'); // 'asc' or 'desc'
-  const [sortField, setSortField] = useState('name'); // 'name', 'price', 'stock'
 
   // Modal states
   const [isAddStockModalOpen, setIsAddStockModalOpen] = useState(false);
@@ -36,6 +31,12 @@ const SerializedProductsList = ({ searchTerm = '', branch = '' }) => {
     confirmText: 'Confirm',
     onConfirm: () => {}
   });
+  const [activeStockTab, setActiveStockTab] = useState('current');
+  const [currentStockData, setCurrentStockData] = useState(null);
+  const [currentStockLoading, setCurrentStockLoading] = useState(false);
+  const [currentStockError, setCurrentStockError] = useState(null);
+  const [expandedHistoryGroups, setExpandedHistoryGroups] = useState({});
+  const [refreshingStock, setRefreshingStock] = useState(false);
 
    // State to track which row is expanded
     const [expandedRowId, setExpandedRowId] = useState(null);
@@ -113,9 +114,27 @@ const SerializedProductsList = ({ searchTerm = '', branch = '' }) => {
     return 0;
   };
 
-  const sortByPrice = (a, b) => {
-    if (a.salePrice < b.salePrice) return sortOrder === 'asc' ? -1 : 1;
-    if (a.salePrice > b.salePrice) return sortOrder === 'asc' ? 1 : -1;
+  const sortByCustomerPrice = (a, b) => {
+    const priceA = a.pricing?.customerPrice || 0;
+    const priceB = b.pricing?.customerPrice || 0;
+    if (priceA < priceB) return sortOrder === 'asc' ? -1 : 1;
+    if (priceA > priceB) return sortOrder === 'asc' ? 1 : -1;
+    return 0;
+  };
+
+  const sortByDealerPrice = (a, b) => {
+    const priceA = a.pricing?.dealerPrice || 0;
+    const priceB = b.pricing?.dealerPrice || 0;
+    if (priceA < priceB) return sortOrder === 'asc' ? -1 : 1;
+    if (priceA > priceB) return sortOrder === 'asc' ? 1 : -1;
+    return 0;
+  };
+
+  const sortByDistributorPrice = (a, b) => {
+    const priceA = a.pricing?.distributorPrice || 0;
+    const priceB = b.pricing?.distributorPrice || 0;
+    if (priceA < priceB) return sortOrder === 'asc' ? -1 : 1;
+    if (priceA > priceB) return sortOrder === 'asc' ? 1 : -1;
     return 0;
   };
 
@@ -136,8 +155,12 @@ const SerializedProductsList = ({ searchTerm = '', branch = '' }) => {
     let sorted = [...filtered];
     if (sortField === 'name') {
       sorted.sort(sortByName);
-    } else if (sortField === 'price') {
-      sorted.sort(sortByPrice);
+    } else if (sortField === 'customerPrice') {
+      sorted.sort(sortByCustomerPrice);
+    } else if (sortField === 'dealerPrice') {
+      sorted.sort(sortByDealerPrice);
+    } else if (sortField === 'distributorPrice') {
+      sorted.sort(sortByDistributorPrice);
     } else if (sortField === 'stock') {
       sorted.sort(sortByStock);
     }
@@ -145,9 +168,191 @@ const SerializedProductsList = ({ searchTerm = '', branch = '' }) => {
     return sorted;
   }, [items, searchTerm, sortField, sortOrder]);
 
-  const openViewStockModal = (item) => {
+  // State for stock history
+  const [stockHistory, setStockHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // Open view stock modal and fetch complete stock history
+  const openViewStockModal = async (item) => {
     setSelectedStockItem(item);
     setIsViewStockModalOpen(true);
+    setActiveStockTab('current');
+    setCurrentStockData(null);
+    setCurrentStockError(null);
+    setExpandedHistoryGroups({});
+    setStockHistory([]);
+    setLoadingHistory(true);
+
+    loadCurrentStockData(item);
+
+    try {
+      const response = await fetch(`${SummaryApi.getStockHistory.url}/${item.id}`, {
+        method: SummaryApi.getStockHistory.method,
+        credentials: 'include'
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setStockHistory(data.history || []);
+      } else {
+        showNotification('error', data.message || 'Failed to fetch stock history');
+        setStockHistory([]);
+      }
+    } catch (err) {
+      console.error('Error fetching stock history:', err);
+      showNotification('error', 'Failed to fetch stock history');
+      setStockHistory([]);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const loadCurrentStockData = async (item) => {
+    try {
+      setCurrentStockLoading(true);
+      setCurrentStockError(null);
+
+      const itemIdentifier = item.id || item._id;
+
+      if (!itemIdentifier) {
+        setCurrentStockError('Invalid item identifier');
+        setCurrentStockLoading(false);
+        return;
+      }
+
+      const queryString = branch ? `?branch=${branch}` : '';
+      const response = await fetch(`${SummaryApi.getInventoryCurrentStock.url}/${itemIdentifier}${queryString}`, {
+        method: SummaryApi.getInventoryCurrentStock.method,
+        credentials: 'include'
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setCurrentStockData(data.data);
+      } else {
+        setCurrentStockError(data.message || 'Failed to fetch current stock details');
+        setCurrentStockData(null);
+      }
+    } catch (err) {
+      console.error('Error fetching current stock status:', err);
+      setCurrentStockError('Failed to fetch current stock details');
+      setCurrentStockData(null);
+    } finally {
+      setCurrentStockLoading(false);
+    }
+  };
+
+  // Refresh handler for stock modal
+  const handleRefreshStockData = async () => {
+    if (!selectedStockItem || refreshingStock) return;
+
+    setRefreshingStock(true);
+    try {
+      // Refresh current stock data
+      await loadCurrentStockData(selectedStockItem);
+
+      // Refresh stock history
+      const response = await fetch(`${SummaryApi.getStockHistory.url}/${selectedStockItem.id}`, {
+        method: SummaryApi.getStockHistory.method,
+        credentials: 'include'
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setStockHistory(data.history || []);
+      }
+
+      showNotification('success', 'Stock data refreshed successfully', 3000);
+    } catch (err) {
+      console.error('Error refreshing stock data:', err);
+      showNotification('error', 'Failed to refresh stock data', 3000);
+    } finally {
+      setRefreshingStock(false);
+    }
+  };
+
+  const getAvailableTotal = () => {
+    if (currentStockData) {
+      return currentStockData.available?.serialized?.length ?? 0;
+    }
+    if (selectedStockItem?.stock) {
+      return selectedStockItem.stock.length;
+    }
+    return currentStockData ? 0 : null;
+  };
+
+  const getAssignedTotal = () => {
+    if (currentStockData) {
+      return (currentStockData.assigned || []).reduce(
+        (sum, entry) => sum + (entry.serializedItems?.length || 0),
+        0
+      );
+    }
+    return 0;
+  };
+
+  const itemUnit = selectedStockItem?.unit || 'pcs';
+
+  const formatDateTime = (value) => {
+    if (!value) return '-';
+    try {
+      return new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+    } catch (err) {
+      return '-';
+    }
+  };
+
+  const groupedStockHistory = useMemo(() => {
+    if (!stockHistory || stockHistory.length === 0) return [];
+
+    const groups = new Map();
+
+    stockHistory.forEach((entry, index) => {
+      const dateObj = entry.addedDate ? new Date(entry.addedDate) : null;
+      const dateKey = dateObj ? dateObj.toISOString().split('T')[0] : `unknown-${index}`;
+
+      if (!groups.has(dateKey)) {
+        groups.set(dateKey, { entries: [], dateObj });
+      }
+      groups.get(dateKey).entries.push(entry);
+    });
+
+    return Array.from(groups.entries())
+      .map(([key, value], idx) => {
+        const totalQuantity = value.entries.reduce(
+          (sum, entry) => sum + (Number(entry.quantity) || 0),
+          0
+        );
+        const serialNumbers = value.entries.map(entry => entry.serialNumber).filter(Boolean);
+        const remarks = Array.from(
+          new Set(value.entries.map(entry => entry.remark).filter(Boolean))
+        );
+
+        return {
+          key: `${key}-${idx}`,
+          dateKey: key,
+          dateObj: value.dateObj,
+          totalQuantity,
+          serialNumbers,
+          remarks,
+          entries: value.entries
+        };
+      })
+      .sort((a, b) => {
+        const aTime = a.dateObj ? a.dateObj.getTime() : 0;
+        const bTime = b.dateObj ? b.dateObj.getTime() : 0;
+        return bTime - aTime;
+      });
+  }, [stockHistory]);
+
+  const toggleHistoryGroup = (key) => {
+    setExpandedHistoryGroups(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
   };
   
   // Reset stock entries form
@@ -203,12 +408,12 @@ const SerializedProductsList = ({ searchTerm = '', branch = '' }) => {
 
   const checkSerialNumber = async (serialNumber, index) => {
     if (!serialNumber.trim()) return;
-    
+
     // Check if this serial number already exists in current entries
     const isDuplicateInCurrentEntries = stockEntries.some(
       (entry, i) => i !== index && entry.serialNumber === serialNumber
     );
-    
+
     if (isDuplicateInCurrentEntries) {
       setSerialNumberStatus(prev => ({
         ...prev,
@@ -219,23 +424,46 @@ const SerializedProductsList = ({ searchTerm = '', branch = '' }) => {
       }));
       return;
     }
-    
+
     try {
       setCheckingSerial(true);
-      
+
       const response = await fetch(`${SummaryApi.checkSerialNumber.url}/${serialNumber}`, {
         method: SummaryApi.checkSerialNumber.method,
         credentials: 'include'
       });
-      
+
       const data = await response.json();
-      
+
       if (data.exists) {
+        // Build appropriate error message based on the type of conflict
+        let errorMessage = '';
+
+        if (data.assignedToTechnician) {
+          // Serial number assigned to technician
+          errorMessage = data.message || `Serial number is assigned to technician: ${data.technicianName}`;
+        } else if (data.usedInBill) {
+          // Serial number used in a bill
+          if (data.customerName) {
+            errorMessage = data.message || `Serial number used in bill for customer: ${data.customerName}`;
+          } else if (data.entityName) {
+            errorMessage = data.message || `Serial number used in bill for ${data.entityType}: ${data.entityName}`;
+          } else {
+            errorMessage = data.message || 'Serial number has been used in a bill';
+          }
+        } else if (data.item) {
+          // Serial number exists in inventory stock
+          errorMessage = `Serial number already exists for item: ${data.item.name}`;
+        } else {
+          // Fallback message
+          errorMessage = data.message || 'Serial number is not available';
+        }
+
         setSerialNumberStatus(prev => ({
           ...prev,
           [index]: {
             valid: false,
-            message: `Serial number already exists for item: ${data.item.name}`
+            message: errorMessage
           }
         }));
       } else {
@@ -243,7 +471,7 @@ const SerializedProductsList = ({ searchTerm = '', branch = '' }) => {
           ...prev,
           [index]: {
             valid: true,
-            message: 'Serial number is valid'
+            message: data.message || 'Serial number is valid'
           }
         }));
       }
@@ -451,11 +679,16 @@ const handleCancelSave = () => {
       }
       
       showNotification('success', 'Stock added successfully');
-      
+
       setShowSaveConfirmation(false);
       setIsAddStockModalOpen(false);
       resetStockEntriesForm();
       fetchItems();
+
+      // Refresh View Details modal data if it's open
+      if (selectedStockItem && isViewStockModalOpen) {
+        loadCurrentStockData(selectedStockItem);
+      }
     } catch (err) {
       showNotification('error', 'Server error. Please try again later.');
       setError('Server error. Please try again later.');
@@ -515,83 +748,24 @@ const handleCancelSave = () => {
     <thead className="bg-gray-50">
       <tr>
         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">S.NO</th>
-        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none"
-        onClick={() => {
-                  if (sortField === 'name') {
-                    setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-                  } else {
-                    setSortField('name');
-                    setSortOrder('asc');
-                  }
-                }}
-                title="Sort by Name"
-                >
+        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 NAME
-                <span className="inline-block ml-1">
-                              {sortField === 'name' ? (
-                                sortOrder === 'asc' ? (
-                                  <LuArrowDownUp className="inline h-4 w-4 text-gray-600" />
-                                ) : (
-                                  <LuArrowUpDown className="inline h-4 w-4 text-gray-600" />
-                                )
-                              ) : (
-                                <LuArrowDownUp className="inline h-4 w-4 text-gray-400" />
-                              )}
-                                </span>
                 </th>
         {/* <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BRANCH</th>
         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">UNIT</th>
         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">WARRANTY</th>
         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MRP</th> */}
-       <th
-                           className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none"
-                           onClick={() => {
-                             if (sortField === 'price') {
-                               setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-                             } else {
-                               setSortField('price');
-                               setSortOrder('asc');
-                             }
-                           }}
-                           title="Sort by Price"
-                         >
-                           PRICE
-                           <span className="inline-block ml-1">
-                             {sortField === 'price' ? (
-                               sortOrder === 'asc' ? (
-                                 <LuArrowDownUp className="inline h-4 w-4 text-gray-600" />
-                               ) : (
-                                 <LuArrowUpDown className="inline h-4 w-4 text-gray-600" />
-                               )
-                             ) : (
-                               <LuArrowDownUp className="inline h-4 w-4 text-gray-400" />
-                             )}
-                           </span>
-                         </th>
-        <th
-                            className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none"
-                            onClick={() => {
-                              if (sortField === 'stock') {
-                                setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-                              } else {
-                                setSortField('stock');
-                                setSortOrder('asc');
-                              }
-                            }}
-                            title="Sort by Stock"
-                          >
+      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            ₹ CUSTOMER
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            ₹ DEALER
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            ₹ DISTRIBUTOR
+                        </th>
+        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             STOCK
-                            <span className="inline-block ml-1">
-                              {sortField === 'stock' ? (
-                                sortOrder === 'asc' ? (
-                                  <LuArrowDownUp className="inline h-4 w-4 text-gray-600" />
-                                ) : (
-                                  <LuArrowUpDown className="inline h-4 w-4 text-gray-600" />
-                                )
-                              ) : (
-                                <LuArrowDownUp className="inline h-4 w-4 text-gray-400" />
-                              )}
-                            </span>
                           </th>
         {/* <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ACTIONS</th> */}
       </tr>
@@ -603,10 +777,8 @@ const handleCancelSave = () => {
           item={item}
           index={index}
           user={user}
-          openViewStockModal={openViewStockModal}
-          openAddStockModal={openAddStockModal}
-          isExpanded={expandedRowId === item.id}
-          toggleExpanded={() => toggleRowExpansion(item.id)}
+          openViewStockModal={() => openViewStockModal(item)}
+          openAddStockModal={() => openAddStockModal(item)}
         />
       ))}
     </tbody>
@@ -621,6 +793,7 @@ const handleCancelSave = () => {
         onClose={() => handleDiscardAndClose()}
         title={`Add Stock for ${selectedItem?.name || ''}`}
         size="lg"
+        zIndex="z-[60]"
       >
         {selectedItem && (
           <div>
@@ -841,60 +1014,303 @@ const handleCancelSave = () => {
       {/* View Stock Modal */}
       <Modal
         isOpen={isViewStockModalOpen}
-        onClose={() => setIsViewStockModalOpen(false)}
+        onClose={() => {
+          setIsViewStockModalOpen(false);
+          setStockHistory([]);
+          setCurrentStockData(null);
+          setCurrentStockError(null);
+          setExpandedHistoryGroups({});
+          setActiveStockTab('current');
+        }}
         title={`Stock Details - ${selectedStockItem?.name || ''}`}
-        size="lg"
+        size="xl"
       >
         {selectedStockItem && (
           <div>
-            <div className="mb-4">
-              <h3 className="text-lg font-medium text-gray-900">Serial Numbers</h3>
-              <p className="text-sm text-gray-500">
-                Total Stock: {selectedStockItem.stock ? selectedStockItem.stock.length : 0} {selectedStockItem.unit}
-              </p>
+            <div className="mb-4 flex justify-between items-start">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Stock Overview</h3>
+                <p className="text-sm text-gray-500">
+                  Current Available Stock:{' '}
+                  {(() => {
+                    const availableTotal = getAvailableTotal();
+                    if (availableTotal === null || availableTotal === undefined) {
+                      return '...';
+                    }
+                    const unitLabel = selectedStockItem.unit || 'pcs';
+                    return `${availableTotal} ${unitLabel}`.trim();
+                  })()}
+                </p>
+                {(() => {
+                  const assignedTotal = getAssignedTotal();
+                  if (assignedTotal === null || assignedTotal === undefined) {
+                    return null;
+                  }
+                  const unitLabel = selectedStockItem.unit || 'pcs';
+                  return (
+                    <p className="text-sm text-gray-500">
+                      Assigned to Technicians: {assignedTotal} {unitLabel}
+                    </p>
+                  );
+                })()}
+                <p className="text-sm text-gray-400 mt-1">
+                  Switch between current allocation and stock addition history.
+                </p>
+              </div>
+
+              {/* Refresh and Add Stock Buttons */}
+              <div className="flex items-center space-x-2">
+                {/* Refresh Button */}
+                <button
+                  onClick={handleRefreshStockData}
+                  disabled={refreshingStock}
+                  className={`p-2 rounded-md transition-colors ${
+                    refreshingStock
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-blue-100 text-blue-600 hover:bg-blue-200'
+                  }`}
+                  title="Refresh stock data"
+                >
+                  <FiRefreshCw
+                    className={`w-4 h-4 ${refreshingStock ? 'animate-spin' : ''}`}
+                  />
+                </button>
+
+                {/* Add Stock Button */}
+                {user.role === 'manager' && (
+                  <button
+                    onClick={() => {
+                      openAddStockModal(selectedStockItem);
+                    }}
+                    className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-md font-medium flex items-center gap-2"
+                  >
+                    <FiPlus size={18} />
+                    Add Stock
+                  </button>
+                )}
+              </div>
             </div>
-            
-            {selectedStockItem.stock && selectedStockItem.stock.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sr No.</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Serial Number</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date Added</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Remark</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {selectedStockItem.stock.map((stockItem, index) => (
-                      <tr key={stockItem.serialNumber || index}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{index + 1}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{stockItem.serialNumber}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{stockItem.quantity}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {new Date(stockItem.date).toLocaleDateString()}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-500">
-                          <div className="max-w-xs truncate" title={stockItem.remark || '-'}>
-                            {stockItem.remark || '-'}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+
+            <div className="border-b border-gray-200 mb-4">
+              <nav className="-mb-px flex space-x-4">
+                <button
+                  type="button"
+                  onClick={() => setActiveStockTab('current')}
+                  className={`px-3 py-2 text-sm font-medium border-b-2 ${
+                    activeStockTab === 'current'
+                      ? 'border-teal-500 text-teal-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Current Stock
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveStockTab('history')}
+                  className={`px-3 py-2 text-sm font-medium border-b-2 ${
+                    activeStockTab === 'history'
+                      ? 'border-teal-500 text-teal-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Stock History
+                </button>
+              </nav>
+            </div>
+
+            {activeStockTab === 'current' ? (
+              <div>
+                {currentStockLoading ? (
+                  <div className="text-center py-8 text-gray-500">
+                    Loading current stock details...
+                  </div>
+                ) : currentStockError ? (
+                  <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-md">
+                    {currentStockError}
+                  </div>
+                ) : currentStockData ? (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 md:col-span-1 col-span-2">
+                      <h4 className="text-base font-semibold text-gray-900">Available in Branch</h4>
+                      <p className="text-sm text-gray-500 mb-3">
+                        {(() => {
+                          const total = getAvailableTotal();
+                          const unitLabel = selectedStockItem.unit || 'pcs';
+                          return `Total Available: ${total !== null ? total : 0} ${unitLabel}`.trim();
+                        })()}
+                      </p>
+                      {currentStockData.available?.serialized?.length ? (
+                        <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                          {currentStockData.available.serialized.map((entry, index) => (
+                            <div
+                              key={`${entry.serialNumber || 'serial'}-${index}`}
+                              className="bg-white border border-gray-200 rounded-md p-3"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="font-medium text-gray-900">S/N: {entry.serialNumber}</span>
+                                <span className="text-xs text-gray-500">
+                                  {entry.date ? new Date(entry.date).toLocaleDateString() : '-'}
+                                </span>
+                              </div>
+                              {entry.remark && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Remark: {entry.remark}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-500">
+                          No serialized stock currently available in branch.
+                        </p>
+                      )}
+                    </div>
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 md:col-span-1 col-span-2">
+                      <h4 className="text-base font-semibold text-gray-900">Assigned to Technicians</h4>
+                      <p className="text-sm text-gray-500 mb-3">
+                        {(() => {
+                          const total = getAssignedTotal();
+                          const unitLabel = selectedStockItem.unit || 'pcs';
+                          return `Total Assigned: ${total !== null ? total : 0} ${unitLabel}`.trim();
+                        })()}
+                      </p>
+                      {currentStockData.assigned?.length ? (
+                        <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                          {currentStockData.assigned.map((entry, index) => (
+                            <div
+                              key={entry.technicianId || index}
+                              className="bg-white border border-gray-200 rounded-md p-3"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <p className="font-medium text-gray-900">{entry.technicianName}</p>
+                                  {entry.username && (
+                                    <p className="text-xs text-gray-500">@{entry.username}</p>
+                                  )}
+                                </div>
+                                <div className="text-right text-sm font-semibold text-gray-700">
+                                  {entry.serializedItems?.length || 0} pcs
+                                </div>
+                              </div>
+                              {entry.serializedItems?.length > 0 && (
+                                <div className="mt-2 space-y-1">
+                                  {entry.serializedItems.map((serialItem, serialIndex) => (
+                                    <div
+                                      key={`${entry.technicianId || index}-${serialItem.serialNumber || serialIndex}`}
+                                      className="flex items-center justify-between text-xs text-gray-600 bg-gray-50 rounded px-2 py-1"
+                                    >
+                                      <span>S/N: {serialItem.serialNumber}</span>
+                                      <span>{serialItem.assignedAt ? formatDateTime(serialItem.assignedAt) : '-'}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-500">
+                          No stock is currently assigned to technicians.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-center py-8 text-gray-500">
+                    No current stock data available.
+                  </p>
+                )}
               </div>
             ) : (
-              <div className="text-center py-8 text-gray-500">
-                No stock entries found for this product in your branch.
+              <div>
+                {loadingHistory ? (
+                  <div className="text-center py-8 text-gray-500">
+                    Loading stock history...
+                  </div>
+                ) : groupedStockHistory.length > 0 ? (
+                  <div className="space-y-3">
+                    {groupedStockHistory.map(group => {
+                      const isExpanded = !!expandedHistoryGroups[group.key];
+                      const dateLabel = group.dateObj
+                        ? group.dateObj.toLocaleDateString(undefined, { dateStyle: 'medium' })
+                        : group.dateKey.replace('unknown-', 'Unknown Date ');
+                      const primaryRemark = group.remarks[0] || 'No remark recorded.';
+
+                      return (
+                        <div
+                          key={group.key}
+                          className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => toggleHistoryGroup(group.key)}
+                            className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-100 transition-colors"
+                          >
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3 mb-1">
+                                <span className="font-semibold text-gray-800">{dateLabel}</span>
+                                <span className="text-xs bg-teal-100 text-teal-700 px-2 py-1 rounded-full">
+                                  +{group.totalQuantity} {itemUnit}
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-600 line-clamp-2">
+                                {primaryRemark}
+                              </p>
+                            </div>
+                            {isExpanded ? (
+                              <FiChevronDown className="w-5 h-5 text-gray-500" />
+                            ) : (
+                              <FiChevronRight className="w-5 h-5 text-gray-500" />
+                            )}
+                          </button>
+
+                          {isExpanded && (
+                            <div className="px-4 pb-4 space-y-3">
+                              {group.serialNumbers.length > 0 ? (
+                                <div>
+                                  <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+                                    Serial Numbers
+                                  </h4>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                                    {group.serialNumbers.map((sn, idx) => (
+                                      <div
+                                        key={`${group.key}-serial-${idx}`}
+                                        className="bg-white border border-gray-200 rounded px-3 py-2 text-gray-700 font-mono text-sm"
+                                      >
+                                        {sn}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : (
+                                <p className="text-sm text-gray-500">No serial numbers recorded for this entry.</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    No stock additions found for this product in your branch.
+                  </div>
+                )}
               </div>
             )}
-            
+
             <div className="mt-6 flex justify-end">
               <button
                 type="button"
-                onClick={() => setIsViewStockModalOpen(false)}
+                onClick={() => {
+                  setIsViewStockModalOpen(false);
+                  setStockHistory([]);
+                  setCurrentStockData(null);
+                  setCurrentStockError(null);
+                  setExpandedHistoryGroups({});
+                  setActiveStockTab('current');
+                }}
                 className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none"
               >
                 Close
@@ -909,6 +1325,7 @@ const handleCancelSave = () => {
   onClose={handleCancelSave}
   title="Confirm Save"
   size="md"
+  zIndex="z-[70]"
 >
   <div className="py-4">
     <div className="mb-6 flex items-center justify-center">
@@ -959,15 +1376,13 @@ const handleCancelSave = () => {
   );
 };
 
-const ClickableTableRow = ({ item, index, user, openViewStockModal, openAddStockModal, isExpanded,
-  toggleExpanded }) => {
-  // const [expanded, setExpanded] = useState(false);
+const ClickableTableRow = ({ item, index, user, openViewStockModal, openAddStockModal }) => {
   
   return (
     <React.Fragment>
-      <tr 
+      <tr
         className="hover:bg-gray-50 cursor-pointer"
-        onClick={toggleExpanded}
+        onClick={() => openViewStockModal(item)}
       >
         <td className="px-6 py-4 whitespace-nowrap">
           <div className="w-8 h-8 rounded-full text-blue-800 bg-blue-200 flex items-center justify-center font-medium">
@@ -981,7 +1396,15 @@ const ClickableTableRow = ({ item, index, user, openViewStockModal, openAddStock
         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.unit}</td>
         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.warranty || 'No Warranty'}</td>
         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">₹{item.mrp}</td> */}
-        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">₹{item.salePrice}</td>
+        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
+          ₹{item.pricing?.customerPrice || 0}
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
+          ₹{item.pricing?.dealerPrice || 0}
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
+          ₹{item.pricing?.distributorPrice || 0}
+        </td>
         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-blue-800 bg-blue-200">
             {item.stock ? item.stock.length : 0} {item.unit}
@@ -1001,34 +1424,7 @@ const ClickableTableRow = ({ item, index, user, openViewStockModal, openAddStock
           </button>
         </td> */}
       </tr>
-      
-      {/* Expandable row for action buttons */}
-      {isExpanded && (
-        <tr className="bg-gray-50">
-          <td colSpan={9} className="px-6 py-4 border-b">
-            <div className="flex space-x-3">
-              <button
-                onClick={() => openViewStockModal(item)}
-                className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-              >
-                View Details
-              </button>
-              
-              {user.role === 'manager' && (
-                <button
-                  onClick={() => openAddStockModal(item)}
-                  className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-teal-500 hover:bg-teal-600"
-                >
-                  Add Stock
-                </button>
-              )}
-            </div>
-          </td>
-        </tr>
-      )}
     </React.Fragment>
-
-    
   );
 };
 

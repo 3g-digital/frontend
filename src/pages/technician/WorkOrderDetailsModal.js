@@ -271,30 +271,38 @@ const WorkOrderDetailsModal = (props) => {
 
 // पॉज़ की तारीख खोजने के लिए
 const findPauseDateTime = () => {
-  if (!workOrder?.statusHistory) return "N/A";
-  
-  // स्टेटस हिस्ट्री से अंतिम पॉज़ एंट्री खोजें
+  if (!workOrder?.statusHistory || workOrder.statusHistory.length === 0) return "N/A";
+
+  console.log('Status history for pause date:', workOrder.statusHistory);
+
+  // स्टेटस हिस्ट्री से अंतिम पॉज़ एंट्री खोजें (case insensitive)
   const pauseHistory = [...workOrder.statusHistory]
     .reverse()
-    .find(history => history.status === 'paused');
-    
+    .find(history => history.status && history.status.toLowerCase() === 'paused');
+
+  console.log('Found pause history for date:', pauseHistory);
+
   if (!pauseHistory) return "N/A";
-  
-  return formatDate(pauseHistory.updatedAt);
+
+  return formatDate(pauseHistory.updatedAt || pauseHistory.createdAt);
 };
 
 // पॉज़ का कारण खोजने के लिए
 const findPauseReason = () => {
-  if (!workOrder?.statusHistory) return "No reason provided";
-  
-  // स्टेटस हिस्ट्री से अंतिम पॉज़ एंट्री खोजें
+  if (!workOrder?.statusHistory || workOrder.statusHistory.length === 0) return "No reason provided";
+
+  console.log('Status history for pause reason:', workOrder.statusHistory);
+
+  // स्टेटस हिस्ट्री से अंतिम पॉज़ एंट्री खोजें (case insensitive)
   const pauseHistory = [...workOrder.statusHistory]
     .reverse()
-    .find(history => history.status === 'paused');
-    
+    .find(history => history.status && history.status.toLowerCase() === 'paused');
+
+  console.log('Found pause history for reason:', pauseHistory);
+
   if (!pauseHistory) return "No reason provided";
-  
-  return pauseHistory.remark || "No reason provided";
+
+  return pauseHistory.remark || pauseHistory.reason || "No reason provided";
 };
 
 // प्रोजेक्ट रिज्यूम करने के लिए
@@ -377,17 +385,51 @@ const renderProjectContent = () => {
             <p><span className="font-medium">Type:</span> {workOrder.projectType}</p>
             <p><span className="font-medium">Category:</span> {workOrder.projectCategory || 'New Installation'}</p>
 
-             {/* Show Project ID only for Repair/Complaint */} 
+             {/* Show Project ID only for Repair/Complaint */}
       {/* {workOrder.projectCategory === 'Repair' && (
         <>
           <p><span className="text-gray-500">Project ID:</span> {workOrder.projectId}</p>
           <p><span className="text-gray-500">Created Date:</span> {formatDate(workOrder.createdAt)}</p>
-          
+
           {workOrder.completedBy && (
             <p><span className="text-gray-500">Completed By:</span> {workOrder.completedBy}</p>
           )}
         </>
       )} */}
+
+            {/* Created By Information */}
+            {/* {workOrder.createdByName && (
+              <p className="mt-2">
+                <span className="font-medium">Created By:</span>{' '}
+                <span className="text-gray-700">{workOrder.createdByName}</span>
+                {workOrder.createdByRole && (
+                  <span className={`ml-2 px-2 py-0.5 rounded text-xs ${
+                    workOrder.createdByRole === 'admin'
+                      ? 'bg-purple-100 text-purple-700'
+                      : 'bg-blue-100 text-blue-700'
+                  }`}>
+                    {workOrder.createdByRole === 'admin' ? 'Admin' : 'Manager'}
+                  </span>
+                )}
+              </p>
+            )} */}
+
+            {/* Assigned By Information */}
+            {workOrder.assignedByName && (
+              <p className="mt-1">
+                <span className="font-medium">Assigned By:</span>{' '}
+                <span className="text-gray-700">{workOrder.assignedByName}</span>
+                {workOrder.assignedByRole && (
+                  <span className={`ml-2 px-2 py-0.5 rounded text-xs ${
+                    workOrder.assignedByRole === 'admin'
+                      ? 'bg-purple-100 text-purple-700'
+                      : 'bg-blue-100 text-blue-700'
+                  }`}>
+                    {workOrder.assignedByRole === 'admin' ? 'Admin' : 'Manager'}
+                  </span>
+                )}
+              </p>
+            )}
           </div>
         </div>
         
@@ -399,6 +441,9 @@ const renderProjectContent = () => {
           </h3>
           <div className="bg-white border rounded-lg p-3 space-y-2">
             <p className="font-medium">{workOrder.customerName}</p>
+            {workOrder.customerFirmName && (
+              <p className="text-sm text-gray-600"><span className='font-bold'>Company :</span> {workOrder.customerFirmName}</p>
+            )}
             {workOrder.customerAddress && (
               <p className="flex items-start text-sm">
                 <FiMapPin className="mr-2 text-gray-500 mt-1" />
@@ -532,11 +577,45 @@ const renderProjectContent = () => {
                 <p><span className="text-gray-500">Project ID:</span> {workOrder.projectId}</p>
                 <p>
                   <span className="text-gray-500">Project Date:</span> {
-                    workOrder.projectCreatedAt 
-                      ? formatDate(workOrder.projectCreatedAt) 
+                    workOrder.projectCreatedAt
+                      ? formatDate(workOrder.projectCreatedAt)
                       : formatDate(workOrder.createdAt)
                   }
                 </p>
+
+                {/* Created By Information */}
+                {/* {workOrder.createdByName && (
+                  <p className="mt-2">
+                    <span className="text-gray-500">Created By:</span>{' '}
+                    <span className="font-medium text-gray-900">{workOrder.createdByName}</span>
+                    {workOrder.createdByRole && (
+                      <span className={`ml-2 px-2 py-0.5 rounded text-xs ${
+                        workOrder.createdByRole === 'admin'
+                          ? 'bg-purple-100 text-purple-700'
+                          : 'bg-blue-100 text-blue-700'
+                      }`}>
+                        {workOrder.createdByRole === 'admin' ? 'Admin' : 'Manager'}
+                      </span>
+                    )}
+                  </p>
+                )} */}
+
+                {/* Assigned By Information */}
+                {workOrder.assignedByName && (
+                  <p className="mt-1">
+                    <span className="text-gray-500">Assigned By:</span>{' '}
+                    <span className="font-medium text-gray-900">{workOrder.assignedByName}</span>
+                    {workOrder.assignedByRole && (
+                      <span className={`ml-2 px-2 py-0.5 rounded text-xs ${
+                        workOrder.assignedByRole === 'admin'
+                          ? 'bg-purple-100 text-purple-700'
+                          : 'bg-blue-100 text-blue-700'
+                      }`}>
+                        {workOrder.assignedByRole === 'admin' ? 'Admin' : 'Manager'}
+                      </span>
+                    )}
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -549,6 +628,9 @@ const renderProjectContent = () => {
             </h3>
             <div className="bg-white border rounded-lg p-3 space-y-2">
               <p className="font-medium">{workOrder.customerName}</p>
+              {workOrder.customerFirmName && (
+                <p className="text-sm text-gray-600"><span className='font-bold'>Company :</span> {workOrder.customerFirmName}</p>
+              )}
               {workOrder.customerAddress && (
                 <p className="flex items-start text-sm">
                   <FiMapPin className="mr-2 text-gray-500 mt-1" />
@@ -566,7 +648,7 @@ const renderProjectContent = () => {
                 Project Requirements
               </h3>
               <div className="bg-white border rounded-lg p-3">
-                <p className="text-sm">{workOrder.initialRemark}</p>
+                <p className="text-sm" style={{ whiteSpace: 'pre-line' }}>{workOrder.initialRemark}</p>
               </div>
             </div>
           )}
@@ -579,7 +661,7 @@ const renderProjectContent = () => {
                 Special Instructions
               </h3>
               <div className="bg-white border rounded-lg p-3">
-                <p className="text-sm">{workOrder.instructions}</p>
+                <p className="text-sm" style={{ whiteSpace: 'pre-line' }}>{workOrder.instructions}</p>
               </div>
             </div>
           )}
@@ -688,15 +770,49 @@ const renderProjectContent = () => {
 
                 {/* Show Project ID and Created Date */}
       <p><span className="text-gray-500">Project ID:</span> {workOrder.projectId}</p>
-      
+
       {/* Original Project Date for both Repair and New Installation */}
       <p>
         <span className="text-gray-500">Project Date:</span> {
-          workOrder.projectCreatedAt 
-            ? formatDate(workOrder.projectCreatedAt) 
+          workOrder.projectCreatedAt
+            ? formatDate(workOrder.projectCreatedAt)
             : formatDate(workOrder.createdAt)
         }
       </p>
+
+              {/* Created By Information */}
+              {/* {workOrder.createdByName && (
+                <p className="mt-2">
+                  <span className="text-gray-500">Created By:</span>{' '}
+                  <span className="font-medium text-gray-900">{workOrder.createdByName}</span>
+                  {workOrder.createdByRole && (
+                    <span className={`ml-2 px-2 py-0.5 rounded text-xs ${
+                      workOrder.createdByRole === 'admin'
+                        ? 'bg-purple-100 text-purple-700'
+                        : 'bg-blue-100 text-blue-700'
+                    }`}>
+                      {workOrder.createdByRole === 'admin' ? 'Admin' : 'Manager'}
+                    </span>
+                  )}
+                </p>
+              )} */}
+
+              {/* Assigned By Information */}
+              {workOrder.assignedByName && (
+                <p className="mt-1">
+                  <span className="text-gray-500">Assigned By:</span>{' '}
+                  <span className="font-medium text-gray-900">{workOrder.assignedByName}</span>
+                  {workOrder.assignedByRole && (
+                    <span className={`ml-2 px-2 py-0.5 rounded text-xs ${
+                      workOrder.assignedByRole === 'admin'
+                        ? 'bg-purple-100 text-purple-700'
+                        : 'bg-blue-100 text-blue-700'
+                    }`}>
+                      {workOrder.assignedByRole === 'admin' ? 'Admin' : 'Manager'}
+                    </span>
+                  )}
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -707,9 +823,12 @@ const renderProjectContent = () => {
             <FiUser className="mr-2" />
             Customer Information
           </h3>
-          
-          <div className="bg-white border rounded-lg p-3 space-y-2">
+
+          <div className="bg-white border rounded-lg p-3 ">
             <p className="font-medium">{workOrder.customerName}</p>
+            {workOrder.customerFirmName && (
+              <p className="text-sm text-gray-600 mb-2"><span className='font-bold'>Company :</span> {workOrder.customerFirmName}</p>
+            )}
             {workOrder.customerAddress && (
               <p className="flex items-start text-sm">
                 <FiMapPin className="mr-2 text-gray-500 mt-1" />
@@ -791,11 +910,11 @@ const renderProjectContent = () => {
    <FiInfo className="mr-2" />
    Project Requirements
  </h3>
- 
+
  <div className="bg-white border rounded-lg p-3">
-   <p className="text-sm">{workOrder.initialRemark}</p>
+   <p className="text-sm" style={{ whiteSpace: 'pre-line' }}>{workOrder.initialRemark}</p>
  </div>
-</div> 
+</div>
 )}
 
 {/* Special Instructions - only show if available */}
@@ -805,9 +924,9 @@ const renderProjectContent = () => {
       <FiInfo className="mr-2" />
       Special Instructions
     </h3>
-    
+
     <div className="bg-white border rounded-lg p-3">
-      <p className="text-sm">{workOrder.instructions}</p>
+      <p className="text-sm" style={{ whiteSpace: 'pre-line' }}>{workOrder.instructions}</p>
     </div>
   </div>
 )}

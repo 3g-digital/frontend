@@ -1,518 +1,658 @@
-import React, { useState } from 'react';
-import { Check, Shield, ChevronRight, Star, Globe } from 'lucide-react';
+import React from 'react';
+import { Home, Users, Wrench, Package, Settings, DollarSign, TrendingUp, AlertCircle, RefreshCw, Clock, CheckCircle } from 'lucide-react';
 
-const ModernBusinessLandingPage = () => {
-  // Add language state
-  const [language, setLanguage] = useState('hinglish'); // Default is hinglish
+const branches = [
+  {
+    id: 1,
+    name: 'Amritsar Branch Office',
+    engineers: 3,
+    expenses: 1250000,
+    avgCollectionDays: 26,
+  },
+  {
+    id: 2,
+    name: 'Delhi Branch Office',
+    engineers: 2,
+    expenses: 1500000,
+    avgCollectionDays: 21,
+  },
+  {
+    id: 3,
+    name: 'Mumbai Branch Office',
+    engineers: 2,
+    expenses: 1900000,
+    avgCollectionDays: 17,
+  },
+];
 
-  // Content translations
-  const content = {
-    hinglish: {
-      // Hero section
-      heroText: "Modern solution for business owners who want better control, security, and efficiency",
-      problemTitle: "Kya Aap Apne Business Mein In Problems Se Pareshan Hain?",
-      problems: [
-        "Staff ko manage karna mushkil ho raha hai?",
-        "Samaan ki chori ka dar hai?",
-        "Staff ke kaaran customers cheat ho rahe hain aur ilzaam aap par lag raha hai?",
-        "Har baar stock checking mein samaan kam milta hai?",
-        "Warranty replacement apni jeb se karni padti hai?",
-        "Computer kharab hone par data loss ka dar lagta hai?"
-      ],
-      dashboardDesc: "Hamara software aapko apne business ko secure aur efficient banane mein madad karega. Real-time monitoring, security features, aur easy management.",
-      ctaText: "Agar aapke paas sirf 2 problems hain, to yeh solution aapka business badal dega",
-      
-      // Features section
-      solutionTitle: "MeraSoftware Business Management Kit mein milega:",
-      solutionDesc: "Hamara comprehensive solution aapke business ko secure aur efficient banayega",
-      featureCard1Title: "Powerful Cloud Software",
-      featureCard1Desc: "Kabhi bhi, kahin se bhi apne business ko monitor karen aur manage karen",
-      featureCard2Title: "Lifetime Support",
-      featureCard2Desc: "Kabhi bhi technical help chahiye? Hum hamesha available hain",
-      featureCard3Title: "One-time Fees",
-      featureCard3Desc: "No monthly charges, No yearly maintenance fees",
-      
-      // Benefits section
-      benefitsTitle: "Aur Bhi Benefits:",
-      benefits: [
-        "Full Ownership after one-time purchase",
-        "1 Week ki training aur full implementation support",
-        "Regular updates for better security and features"
-      ],
-      demoButton: "Free Demo Scheduler",
-      
-      // Stats section
-      impactTitle: "📈 Ab Tak Itne Logon Ne Hamare System Ka Fayda Uthaya Hai:",
-      
-      // CTA section
-      decisionTitle: "🎯 Ab Decision Aapka Hai!",
-      decisionDesc: "Apne business ki security aur growth ke liye aaj hi demo book karein",
-      placeholderText: "Mobile Number",
-      bookDemoButton: "Book Demo",
-      freeText: "100% free consultation. No hidden charges."
-    },
-    english: {
-      // Hero section
-      heroText: "Modern solution for business owners who want better control, security, and efficiency",
-      problemTitle: "Are You Facing These Problems in Your Business?",
-      problems: [
-        "Difficulty in managing staff?",
-        "Fear of inventory theft?",
-        "Customers being cheated by staff and you getting blamed?",
-        "Finding less inventory during stock checking?",
-        "Paying for warranty replacements from your pocket?",
-        "Fear of data loss when computer malfunctions?"
-      ],
-      dashboardDesc: "Our software will help you make your business secure and efficient. Real-time monitoring, security features, and easy management.",
-      ctaText: "If you have even 2 of these problems, this solution will transform your business",
-      
-      // Features section
-      solutionTitle: "MeraSoftware Business Management Kit includes:",
-      solutionDesc: "Our comprehensive solution will make your business secure and efficient",
-      featureCard1Title: "Powerful Cloud Software",
-      featureCard1Desc: "Monitor and manage your business anytime, from anywhere",
-      featureCard2Title: "Lifetime Support",
-      featureCard2Desc: "Need technical help anytime? We are always available",
-      featureCard3Title: "One-time Fees",
-      featureCard3Desc: "No monthly charges, No yearly maintenance fees",
-      
-      // Benefits section
-      benefitsTitle: "Additional Benefits:",
-      benefits: [
-        "Full Ownership after one-time purchase",
-        "1 Week of training and full implementation support",
-        "Regular updates for better security and features"
-      ],
-      demoButton: "Free Demo Scheduler",
-      
-      // Stats section
-      impactTitle: "📈 So Many People Have Benefited From Our System:",
-      
-      // CTA section
-      decisionTitle: "🎯 Now It's Your Decision!",
-      decisionDesc: "Book a demo today for the security and growth of your business",
-      placeholderText: "Mobile Number",
-      bookDemoButton: "Book Demo",
-      freeText: "100% free consultation. No hidden charges."
-    }
+const customerBalances = [
+  {
+    id: 'AM-C01',
+    branchId: 1,
+    branchName: 'Amritsar Branch Office',
+    name: 'City Hospital',
+    billed: 600000,
+    collected: 600000,
+    status: 'Settled',
+    statusClasses: 'bg-green-100 text-green-700',
+  },
+  {
+    id: 'AM-C02',
+    branchId: 1,
+    branchName: 'Amritsar Branch Office',
+    name: 'Star Diagnostics',
+    billed: 680000,
+    collected: 480000,
+    status: 'Partial Balance',
+    statusClasses: 'bg-yellow-100 text-yellow-700',
+  },
+  {
+    id: 'AM-C03',
+    branchId: 1,
+    branchName: 'Amritsar Branch Office',
+    name: 'Sunrise Clinics',
+    billed: 550000,
+    collected: 390000,
+    status: 'Partial Balance',
+    statusClasses: 'bg-yellow-100 text-yellow-700',
+  },
+  {
+    id: 'AM-C04',
+    branchId: 1,
+    branchName: 'Amritsar Branch Office',
+    name: 'Maple Pharma',
+    billed: 500000,
+    collected: 260000,
+    status: 'High Balance',
+    statusClasses: 'bg-orange-100 text-orange-700',
+  },
+  {
+    id: 'AM-C05',
+    branchId: 1,
+    branchName: 'Amritsar Branch Office',
+    name: 'North Labs',
+    billed: 450000,
+    collected: 0,
+    status: 'Awaiting Payment',
+    statusClasses: 'bg-red-100 text-red-700',
+  },
+  {
+    id: 'DL-C01',
+    branchId: 2,
+    branchName: 'Delhi Branch Office',
+    name: 'Global Hospitals',
+    billed: 820000,
+    collected: 700000,
+    status: 'Partial Balance',
+    statusClasses: 'bg-yellow-100 text-yellow-700',
+  },
+  {
+    id: 'DL-C02',
+    branchId: 2,
+    branchName: 'Delhi Branch Office',
+    name: 'Nexus Labs',
+    billed: 600000,
+    collected: 420000,
+    status: 'High Balance',
+    statusClasses: 'bg-orange-100 text-orange-700',
+  },
+  {
+    id: 'DL-C03',
+    branchId: 2,
+    branchName: 'Delhi Branch Office',
+    name: 'Premier Clinics',
+    billed: 760000,
+    collected: 680000,
+    status: 'Partial Balance',
+    statusClasses: 'bg-yellow-100 text-yellow-700',
+  },
+  {
+    id: 'DL-C04',
+    branchId: 2,
+    branchName: 'Delhi Branch Office',
+    name: 'Sunrise Enterprises',
+    billed: 540000,
+    collected: 540000,
+    status: 'Settled',
+    statusClasses: 'bg-green-100 text-green-700',
+  },
+  {
+    id: 'DL-C05',
+    branchId: 2,
+    branchName: 'Delhi Branch Office',
+    name: 'Trident Pharma',
+    billed: 480000,
+    collected: 360000,
+    status: 'High Balance',
+    statusClasses: 'bg-orange-100 text-orange-700',
+  },
+  {
+    id: 'MB-C01',
+    branchId: 3,
+    branchName: 'Mumbai Branch Office',
+    name: 'Metro Hospitals',
+    billed: 780000,
+    collected: 660000,
+    status: 'Partial Balance',
+    statusClasses: 'bg-yellow-100 text-yellow-700',
+  },
+  {
+    id: 'MB-C02',
+    branchId: 3,
+    branchName: 'Mumbai Branch Office',
+    name: 'Skyline Diagnostics',
+    billed: 690000,
+    collected: 690000,
+    status: 'Settled',
+    statusClasses: 'bg-green-100 text-green-700',
+  },
+  {
+    id: 'MB-C03',
+    branchId: 3,
+    branchName: 'Mumbai Branch Office',
+    name: 'Coastal Labs',
+    billed: 640000,
+    collected: 500000,
+    status: 'Partial Balance',
+    statusClasses: 'bg-yellow-100 text-yellow-700',
+  },
+  {
+    id: 'MB-C04',
+    branchId: 3,
+    branchName: 'Mumbai Branch Office',
+    name: 'Apex Pharma',
+    billed: 560000,
+    collected: 430000,
+    status: 'High Balance',
+    statusClasses: 'bg-orange-100 text-orange-700',
+  },
+  {
+    id: 'MB-C05',
+    branchId: 3,
+    branchName: 'Mumbai Branch Office',
+    name: 'Horizon Clinics',
+    billed: 720000,
+    collected: 720000,
+    status: 'Settled',
+    statusClasses: 'bg-green-100 text-green-700',
+  },
+  {
+    id: 'MB-C06',
+    branchId: 3,
+    branchName: 'Mumbai Branch Office',
+    name: 'Vertex Industries',
+    billed: 760000,
+    collected: 480000,
+    status: 'High Balance',
+    statusClasses: 'bg-orange-100 text-orange-700',
+  },
+];
+
+export default function ERPDashboard() {
+  const branchSummaries = branches.map((branch) => {
+    const branchCustomers = customerBalances.filter((customer) => customer.branchId === branch.id);
+    const billed = branchCustomers.reduce((sum, customer) => sum + customer.billed, 0);
+    const collected = branchCustomers.reduce((sum, customer) => sum + customer.collected, 0);
+    const outstanding = billed - collected;
+    const netProfit = collected - branch.expenses;
+    const collectionRate = billed ? Number(((collected / billed) * 100).toFixed(1)) : 0;
+    const settledCustomers = branchCustomers.filter((customer) => customer.status === 'Settled').length;
+    const customersWithOutstanding = branchCustomers.length - settledCustomers;
+
+    return {
+      ...branch,
+      customers: branchCustomers.length,
+      billed,
+      collected,
+      outstanding,
+      netProfit,
+      collectionRate,
+      settledCustomers,
+      customersWithOutstanding,
+    };
+  });
+
+  const totalBilled = branchSummaries.reduce((sum, branch) => sum + branch.billed, 0);
+  const totalCollected = branchSummaries.reduce((sum, branch) => sum + branch.collected, 0);
+  const totalOutstanding = branchSummaries.reduce((sum, branch) => sum + branch.outstanding, 0);
+  const totalExpenses = branchSummaries.reduce((sum, branch) => sum + branch.expenses, 0);
+  const totalProfit = branchSummaries.reduce((sum, branch) => sum + branch.netProfit, 0);
+  const overallCollectionRate = totalBilled ? ((totalCollected / totalBilled) * 100).toFixed(1) : '0.0';
+  const totalCustomers = branchSummaries.reduce((sum, branch) => sum + branch.customers, 0);
+  const settledCustomers = branchSummaries.reduce((sum, branch) => sum + branch.settledCustomers, 0);
+  const customersWithOutstanding = totalCustomers - settledCustomers;
+  const averageCollectionTime = branchSummaries.length
+    ? Math.round(branchSummaries.reduce((sum, branch) => sum + branch.avgCollectionDays, 0) / branchSummaries.length)
+    : 0;
+
+  const customerRows = [...customerBalances].sort(
+    (a, b) => (b.billed - b.collected) - (a.billed - a.collected)
+  );
+
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 0,
+    }).format(amount);
   };
 
-  // Toggle language function
-  const toggleLanguage = () => {
-    setLanguage(language === 'hinglish' ? 'english' : 'hinglish');
+  const collectionBadgeClass = (rate) => {
+    if (rate >= 80) return 'bg-green-100 text-green-700';
+    if (rate >= 70) return 'bg-yellow-100 text-yellow-700';
+    return 'bg-red-100 text-red-700';
   };
-
-  // Get current language content
-  const currentContent = content[language];
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans">
-      {/* Navigation - Updated with red, black, light blue color scheme */}
-      <nav className="bg-black py-4 sticky top-0 z-10 shadow-sm">
-        <div className="container mx-auto px-4 flex justify-between items-center">
-          <div className="font-bold text-xl text-red-600">MeraSoftware</div>
-          <div className="hidden md:flex space-x-8">
-            <a href="#features" className="text-gray-300 hover:text-red-500 transition-colors">Features</a>
-            <a href="#testimonials" className="text-gray-300 hover:text-red-500 transition-colors">Testimonials</a>
-            <a href="#stats" className="text-gray-300 hover:text-red-500 transition-colors">Results</a>
-            <a href="#contact" className="text-gray-300 hover:text-red-500 transition-colors">Contact</a>
+    <div className="flex h-screen bg-gray-50">
+      {/* Sidebar */}
+      <div className="w-56 bg-slate-800 text-white">
+        <div className="p-6 border-b border-slate-700">
+          <h1 className="text-xl font-bold">CMS Panel</h1>
+        </div>
+        <nav className="p-4">
+          <div className="mb-2 px-4 py-3 bg-blue-600 rounded flex items-center gap-3">
+            <Home size={20} />
+            <span>Dashboard</span>
           </div>
-          <div className="flex items-center space-x-4">
-            {/* Language toggle button */}
-            <button 
-              onClick={toggleLanguage} 
-              className="flex items-center bg-gray-800 text-gray-200 px-4 py-2 rounded-full hover:bg-gray-700 transition duration-300 text-sm font-medium"
-            >
-              <Globe size={16} className="mr-2" />
-              {language === 'hinglish' ? 'English' : 'हिंग्लिश'}
+          <div className="mb-2 px-4 py-3 hover:bg-slate-700 rounded flex items-center gap-3 cursor-pointer">
+            <Package size={20} />
+            <span>Branches</span>
+          </div>
+          <div className="mb-2 px-4 py-3 hover:bg-slate-700 rounded flex items-center gap-3 cursor-pointer">
+            <Users size={20} />
+            <span>Managers</span>
+          </div>
+          <div className="mb-2 px-4 py-3 hover:bg-slate-700 rounded flex items-center gap-3 cursor-pointer">
+            <Wrench size={20} />
+            <span>Engineers</span>
+          </div>
+          <div className="mb-2 px-4 py-3 hover:bg-slate-700 rounded flex items-center gap-3 cursor-pointer">
+            <Package size={20} />
+            <span>Inventory</span>
+          </div>
+          <div className="mb-2 px-4 py-3 hover:bg-slate-700 rounded flex items-center gap-3 cursor-pointer">
+            <Settings size={20} />
+            <span>Services</span>
+          </div>
+        </nav>
+      </div>
+
+      {/* Main Content */}
+      <div className="flex-1 overflow-auto">
+        {/* Header */}
+        <div className="bg-white border-b px-8 py-4 flex justify-between items-center">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-800">Dashboard</h2>
+            <p className="text-gray-500 text-sm">Welcome back to your ERP dashboard</p>
+          </div>
+          <div className="flex items-center gap-4">
+            <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2">
+              <RefreshCw size={16} />
+              Mark Update Available
             </button>
-            <button className="bg-red-600 text-white px-5 py-2 rounded-full hover:bg-red-700 transition duration-300 text-sm font-medium">
-              Book Demo
-            </button>
-          </div>
-        </div>
-      </nav>
-
-      {/* Hero Section - Updated with red, black, light blue color scheme */}
-      <section className="py-20 bg-gradient-to-br from-blue-50 via-gray-50 to-white text-gray-800">
-        <div className="container mx-auto px-4 md:px-8">
-          {/* Main Heading - Updated Style */}
-          <div className="text-center mb-12">
-            <div className="flex items-center justify-center mb-4">
-              <div className="h-10 w-10 bg-red-100 rounded-full flex items-center justify-center mr-2">
-                <Shield size={20} className="text-red-600" />
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center">
+                <span className="text-sm font-semibold">A</span>
               </div>
-              <h2 className="text-2xl font-bold text-red-600">MeraSoftware</h2>
-            </div>
-            <p className="text-gray-700 text-lg max-w-2xl mx-auto">
-              {currentContent.heroText}
-            </p>
-          </div>
-          
-          <div className="flex flex-col md:flex-row items-stretch md:space-x-8 mt-10">
-            {/* Left Side with Questions - Updated Card Style */}
-            <div className="w-full md:w-1/2 mb-8 md:mb-0">
-              <div className="bg-white p-8 rounded-2xl shadow-sm h-full border border-gray-100">
-                <h2 className="text-2xl font-bold text-gray-900 mb-6">{currentContent.problemTitle}</h2>
-                <ul className="space-y-5">
-                  {currentContent.problems.map((problem, index) => (
-                    <li key={index} className="flex items-start">
-                      <div className="flex-shrink-0 h-7 w-7 rounded-full bg-red-100 flex items-center justify-center mr-3 mt-1">
-                        <Check size={16} className="text-red-600" />
-                      </div>
-                      <span className="text-gray-800 text-lg font-medium">{problem}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-            
-            {/* Right Side with Image - Updated Style */}
-            <div className="w-full md:w-1/2">
-              <div className="bg-white p-8 rounded-2xl shadow-sm h-full border border-gray-100">
-                <div className="relative aspect-video mb-6 overflow-hidden rounded-xl">
-                  <div className="absolute inset-0 bg-gradient-to-br from-red-600 to-blue-400 flex items-center justify-center">
-                    <div className="text-center p-6">
-                      <div className="w-16 h-16 bg-black/20 backdrop-blur-sm rounded-full mx-auto mb-4 flex items-center justify-center">
-                        <Shield size={24} className="text-white" />
-                      </div>
-                      <h3 className="text-xl font-bold text-white">MeraSoftware Dashboard</h3>
-                    </div>
-                  </div>
-                </div>
-                <p className="text-gray-700 mb-6">{currentContent.dashboardDesc}</p>
-                <div className="border-t border-gray-100 pt-4 flex justify-between items-center text-sm text-gray-500">
-                  <span className="font-medium text-red-600">Latest Version: 2.1</span>
-                  <span>Updated: April 2025</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          {/* Call to Action - English version with color combination */}
-          <div className="mt-12 text-center">
-            {language === 'hinglish' ? (
-              <h2 className="text-3xl font-bold">
-                Agar aapke paas <span className="text-red-600">inmein se 2 problems bhi</span> hain, to yeh <span className="text-red-600">solution</span> aapka <span className="text-red-600">business badal dega</span>
-              </h2>
-            ) : (
-              <h2 className="text-3xl font-bold">
-                If you have <span className="text-red-600">just 2 of these problems</span>, this <span className="text-red-600">solution</span> will <span className="text-red-600">transform your business</span>
-              </h2>
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* Product Info Section - Updated Card Style */}
-      <section className="py-20 bg-white" id="features">
-        <div className="container mx-auto px-4 md:px-8">
-          <div className="text-center mb-16">
-            <span className="px-4 py-1 bg-red-100 text-red-600 rounded-full text-sm font-medium mb-4 inline-block">Our Solution</span>
-            <h2 className="text-3xl font-bold text-gray-900 mb-4">
-              <span className="text-red-600">{currentContent.solutionTitle}</span>
-            </h2>
-            <p className="text-gray-700 max-w-2xl mx-auto">
-              {currentContent.solutionDesc}
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-8">
-            {/* Feature Card 1 - Updated Style */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden transition duration-300 hover:shadow-md">
-              <div className="h-2 bg-red-600"></div>
-              <div className="p-8">
-                <div className="w-12 h-12 bg-blue-100 text-red-600 rounded-lg flex items-center justify-center mb-6">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-4.5-8.5" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 8.5V4a1 1 0 00-1-1H9a1 1 0 00-1 1v4.5" />
-                  </svg>
-                </div>
-                <h3 className="text-xl font-bold text-gray-900 mb-3">{currentContent.featureCard1Title}</h3>
-                <p className="text-gray-700 mb-6">
-                  {currentContent.featureCard1Desc}
-                </p>
-                <ul className="space-y-2 text-gray-700">
-                  <li className="flex items-center">
-                    <Check size={16} className="text-red-600 mr-2" />
-                    <span>Real-time monitoring</span>
-                  </li>
-                  <li className="flex items-center">
-                    <Check size={16} className="text-red-600 mr-2" />
-                    <span>Mobile access</span>
-                  </li>
-                  <li className="flex items-center">
-                    <Check size={16} className="text-red-600 mr-2" />
-                    <span>Automatic backups</span>
-                  </li>
-                </ul>
-              </div>
-            </div>
-            
-            {/* Feature Card 2 - Updated Style */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden transition duration-300 hover:shadow-md">
-              <div className="h-2 bg-red-600"></div>
-              <div className="p-8">
-                <div className="w-12 h-12 bg-blue-100 text-red-600 rounded-lg flex items-center justify-center mb-6">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                  </svg>
-                </div>
-                <h3 className="text-xl font-bold text-gray-900 mb-3">{currentContent.featureCard2Title}</h3>
-                <p className="text-gray-700 mb-6">
-                  {currentContent.featureCard2Desc}
-                </p>
-                <ul className="space-y-2 text-gray-700">
-                  <li className="flex items-center">
-                    <Check size={16} className="text-red-600 mr-2" />
-                    <span>24/7 technical support</span>
-                  </li>
-                  <li className="flex items-center">
-                    <Check size={16} className="text-red-600 mr-2" />
-                    <span>Regular updates</span>
-                  </li>
-                  <li className="flex items-center">
-                    <Check size={16} className="text-red-600 mr-2" />
-                    <span>Training materials</span>
-                  </li>
-                </ul>
-              </div>
-            </div>
-            
-            {/* Feature Card 3 - Updated Style */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden transition duration-300 hover:shadow-md">
-              <div className="h-2 bg-red-600"></div>
-              <div className="p-8">
-                <div className="w-12 h-12 bg-blue-100 text-red-600 rounded-lg flex items-center justify-center mb-6">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2z" />
-                  </svg>
-                </div>
-                <h3 className="text-xl font-bold text-gray-900 mb-3">{currentContent.featureCard3Title}</h3>
-                <p className="text-gray-700 mb-6">
-                  {currentContent.featureCard3Desc}
-                </p>
-                <ul className="space-y-2 text-gray-700">
-                  <li className="flex items-center">
-                    <Check size={16} className="text-red-600 mr-2" />
-                    <span>Full ownership</span>
-                  </li>
-                  <li className="flex items-center">
-                    <Check size={16} className="text-red-600 mr-2" />
-                    <span>No hidden costs</span>
-                  </li>
-                  <li className="flex items-center">
-                    <Check size={16} className="text-red-600 mr-2" />
-                    <span>Lifetime access</span>
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </div>
-
-          {/* Additional Benefits - Updated Style */}
-          <div className="mt-16 bg-blue-50 p-8 rounded-2xl border border-blue-100 shadow-sm">
-            <div className="grid md:grid-cols-2 gap-6 items-center">
-              <div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-6">{currentContent.benefitsTitle}</h3>
-                <ul className="space-y-4">
-                  {currentContent.benefits.map((benefit, index) => (
-                    <li key={index} className="flex items-center">
-                      <div className="h-6 w-6 rounded-full bg-red-100 flex items-center justify-center mr-3">
-                        <Check size={14} className="text-red-600" />
-                      </div>
-                      <span className="text-gray-700">{benefit}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div className="flex items-center justify-center">
-                <button className="bg-red-600 text-white text-lg px-8 py-3 rounded-full hover:bg-red-700 transition duration-300 flex items-center shadow-md hover:shadow-lg transform hover:-translate-y-1">
-                  <span>{currentContent.demoButton}</span>
-                  <ChevronRight size={20} className="ml-2" />
-                </button>
-              </div>
+              <span className="text-sm font-medium">Admin</span>
             </div>
           </div>
         </div>
-      </section>
 
-      {/* Rest of the component remains unchanged */}
-      {/* Statistics Section */}
-      <section className="py-20 bg-gradient-to-br from-blue-50 via-gray-50 to-white" id="stats">
-        <div className="container mx-auto px-4 md:px-8 text-center">
-          <span className="px-4 py-1 bg-red-100 text-red-600 rounded-full text-sm font-medium mb-4 inline-block">Our Impact</span>
-          <h2 className="text-3xl font-bold text-gray-900 mb-12">
-            {currentContent.impactTitle}
-          </h2>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 max-w-4xl mx-auto">
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-              <div className="text-4xl font-bold text-red-600 mb-2">500+</div>
-              <div className="text-gray-700">Businesses Transformed</div>
-            </div>
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-              <div className="text-4xl font-bold text-red-600 mb-2">95%</div>
-              <div className="text-gray-700">Inventory Loss Reduction</div>
-            </div>
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-              <div className="text-4xl font-bold text-red-600 mb-2">40%</div>
-              <div className="text-gray-700">Average Sales Growth</div>
-            </div>
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-              <div className="text-4xl font-bold text-red-600 mb-2">24/7</div>
-              <div className="text-gray-700">Customer Support</div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Testimonials Section */}
-      <section className="py-20 bg-white" id="testimonials">
-        <div className="container mx-auto px-4 md:px-8">
-          <div className="text-center mb-16">
-            <span className="px-4 py-1 bg-red-100 text-red-600 rounded-full text-sm font-medium mb-4 inline-block">Testimonials</span>
-            <h2 className="text-3xl font-bold text-gray-900 mb-4">
-              💬 Real Customers, Real Results
-            </h2>
-            <p className="text-gray-700 max-w-2xl mx-auto">
-              Here's what our customers are saying about their experience with MeraSoftware
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-8">
-            {/* Testimonial 1 */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 transition duration-300 hover:shadow-md">
-              <div className="flex mb-4">
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <Star key={star} size={16} className="text-yellow-400 fill-current" />
-                ))}
-              </div>
-              <p className="text-gray-700 mb-6">
-                "Is software ke baad mere business mein chori 95% kam ho gayi hai! Staff ka management bhi aasan ho gaya hai."
-              </p>
-              <div className="flex items-center">
-                <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center mr-3">
-                  <span className="text-red-600 font-bold">RS</span>
-                </div>
+        {/* Content */}
+        <div className="p-8">
+          {/* Financial Overview Cards */}
+          <div className="grid grid-cols-4 gap-6 mb-8">
+            <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-6 text-white shadow-lg">
+              <div className="flex justify-between items-start mb-4">
                 <div>
-                  <div className="font-semibold text-gray-900">Rajesh Sharma</div>
-                  <div className="text-gray-500 text-sm">Delhi Electronics</div>
+                  <p className="text-blue-100 text-sm mb-1">Total Billed Amount</p>
+                  <p className="text-3xl font-bold">{formatCurrency(totalBilled)}</p>
                 </div>
+                <DollarSign size={40} className="text-blue-200" />
+              </div>
+              <div className="flex items-center gap-2 text-sm text-blue-100">
+                <span>Across {totalCustomers} customer accounts</span>
               </div>
             </div>
 
-            {/* Testimonial 2 */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 transition duration-300 hover:shadow-md">
-              <div className="flex mb-4">
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <Star key={star} size={16} className="text-yellow-400 fill-current" />
-                ))}
-              </div>
-              <p className="text-gray-700 mb-6">
-                "Staff management aasan ho gaya aur bikri 40% badh gayi! Cloud system hone ke karan kabhi bhi business check kar sakti hoon."
-              </p>
-              <div className="flex items-center">
-                <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center mr-3">
-                  <span className="text-red-600 font-bold">AP</span>
-                </div>
+            <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-6 text-white shadow-lg">
+              <div className="flex justify-between items-start mb-4">
                 <div>
-                  <div className="font-semibold text-gray-900">Anita Patel</div>
-                  <div className="text-gray-500 text-sm">Mumbai Retail</div>
+                  <p className="text-green-100 text-sm mb-1">Amount Collected</p>
+                  <p className="text-3xl font-bold">{formatCurrency(totalCollected)}</p>
                 </div>
+                <CheckCircle size={40} className="text-green-200" />
+              </div>
+              <div className="flex items-center gap-2 text-sm text-green-100">
+                <TrendingUp size={16} />
+                <span>{overallCollectionRate}% overall collection</span>
+              </div>
+              <div className="text-sm text-green-100 mt-1">
+                Settled for {settledCustomers} customers
               </div>
             </div>
 
-            {/* Testimonial 3 */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 transition duration-300 hover:shadow-md">
-              <div className="flex mb-4">
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <Star key={star} size={16} className="text-yellow-400 fill-current" />
-                ))}
-              </div>
-              <p className="text-gray-700 mb-6">
-                "Data loss ka dar khatam ho gaya hai aur inventory tracking automated ho gayi hai. Best investment mere business ke liye!"
-              </p>
-              <div className="flex items-center">
-                <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center mr-3">
-                  <span className="text-red-600 font-bold">VK</span>
-                </div>
+            <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl p-6 text-white shadow-lg">
+              <div className="flex justify-between items-start mb-4">
                 <div>
-                  <div className="font-semibold text-gray-900">Vijay Kumar</div>
-                  <div className="text-gray-500 text-sm">Pune Hardware</div>
+                  <p className="text-orange-100 text-sm mb-1">Outstanding Amount</p>
+                  <p className="text-3xl font-bold">{formatCurrency(totalOutstanding)}</p>
                 </div>
+                <Clock size={40} className="text-orange-200" />
+              </div>
+              <div className="text-sm text-orange-100">
+                Due from {customersWithOutstanding} customers
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-red-500 to-red-600 rounded-xl p-6 text-white shadow-lg">
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <p className="text-red-100 text-sm mb-1">Total Expenses</p>
+                  <p className="text-3xl font-bold">{formatCurrency(totalExpenses)}</p>
+                </div>
+                <AlertCircle size={40} className="text-red-200" />
+              </div>
+              <div className="text-sm text-red-100">
+                Operational costs
               </div>
             </div>
           </div>
-        </div>
-      </section>
 
-      {/* Call To Action */}
-      <section className="py-20 bg-black" id="contact">
-        <div className="container mx-auto px-4 md:px-8">
-          <div className="max-w-4xl mx-auto bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
-            <div className="flex flex-col md:flex-row items-center justify-between">
-              <div className="md:w-2/3 text-left mb-6 md:mb-0">
-                <span className="px-4 py-1 bg-red-100 text-red-600 rounded-full text-sm font-medium mb-4 inline-block">Ready?</span>
-                <h2 className="text-2xl font-bold mb-2 text-gray-900">
-                  {currentContent.decisionTitle}
-                </h2>
-                <p className="text-gray-700">
-                  {currentContent.decisionDesc}
-                </p>
-              </div>
-              <div className="md:w-1/3">
-                <div className="flex flex-col space-y-3">
-                  <input 
-                    type="text" 
-                    placeholder={currentContent.placeholderText} 
-                    className="w-full px-4 py-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  />
-                  <button className="w-full bg-red-600 hover:bg-red-700 text-white px-4 py-3 rounded-lg font-medium transition duration-300">
-                    {currentContent.bookDemoButton}
-                  </button>
-                  <p className="text-xs text-gray-500 text-center">
-                    {currentContent.freeText}
+          {/* Net Profit & Collection Stats */}
+          <div className="grid grid-cols-3 gap-6 mb-8">
+            <div className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-purple-500">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-gray-500 text-sm mb-1">Net Profit (After Collection)</p>
+                  <p className="text-3xl font-bold text-purple-600">{formatCurrency(totalProfit)}</p>
+                  <p className="text-sm text-gray-500 mt-2">
+                    Profit Margin: {totalCollected ? ((totalProfit / totalCollected) * 100).toFixed(1) : '0.0'}%
                   </p>
                 </div>
+                <div className="p-3 bg-purple-100 rounded-lg">
+                  <TrendingUp size={24} className="text-purple-600" />
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-      </section>
 
-      {/* Footer */}
-      <footer className="bg-black py-12 border-t border-gray-800 text-white">
-        <div className="container mx-auto px-4 md:px-8">
-          <div className="grid md:grid-cols-2 gap-8">
-            <div>
-              <h3 className="text-xl font-bold mb-4 text-white">MeraSoftware</h3>
-              <p className="text-gray-300 mb-6">
-                Business solution that protects your business and helps it grow.
-              </p>
-              <div className="flex space-x-4">
-                <a href="#" className="text-blue-300 hover:text-blue-400 transition-colors">Facebook</a>
-                <a href="#" className="text-blue-300 hover:text-blue-400 transition-colors">Twitter</a>
-                <a href="#" className="text-blue-300 hover:text-blue-400 transition-colors">LinkedIn</a>
-                <a href="#" className="text-blue-300 hover:text-blue-400 transition-colors">YouTube</a>
+            <div className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-indigo-500">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-gray-500 text-sm mb-1">Customer Accounts Summary</p>
+                  <p className="text-3xl font-bold text-indigo-600">{totalCustomers}</p>
+                  <p className="text-sm text-gray-500 mt-2">
+                    Settled: {settledCustomers} | Pending Balance: {customersWithOutstanding}
+                  </p>
+                </div>
+                <div className="p-3 bg-indigo-100 rounded-lg">
+                  <Users size={24} className="text-indigo-600" />
+                </div>
               </div>
             </div>
-            <div>
-              <h3 className="text-xl font-bold mb-4 text-white">Contact Us</h3>
-              <p className="text-gray-300">
-                Email: contact@merasoftware.com<br />
-                Phone: +91 98765 43210<br />
-                Address: Tech Hub, Sector 62, Noida, UP
-              </p>
+
+            <div className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-teal-500">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-gray-500 text-sm mb-1">Average Collection Time</p>
+                  <p className="text-3xl font-bold text-teal-600">
+                    {averageCollectionTime} days
+                  </p>
+                  <p className="text-sm text-gray-500 mt-2">
+                    Payment cycle duration
+                  </p>
+                </div>
+                <div className="p-3 bg-teal-100 rounded-lg">
+                  <Clock size={24} className="text-teal-600" />
+                </div>
+              </div>
             </div>
           </div>
-          <div className="mt-8 pt-8 text-center text-gray-400 text-sm border-t border-gray-800">
-            <p>© {new Date().getFullYear()} MeraSoftware. All rights reserved.</p>
+
+          {/* Branch Financial Details Table */}
+          <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
+            <h3 className="text-xl font-bold text-gray-800 mb-6">Branch-wise Customer Balance Snapshot</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b-2 border-gray-200">
+                    <th className="text-left py-4 px-4 font-semibold text-gray-700">Branch</th>
+                    <th className="text-right py-4 px-4 font-semibold text-gray-700">Billed</th>
+                    <th className="text-right py-4 px-4 font-semibold text-gray-700">Collected</th>
+                    <th className="text-right py-4 px-4 font-semibold text-gray-700">Outstanding</th>
+                    <th className="text-right py-4 px-4 font-semibold text-gray-700">Expenses</th>
+                    <th className="text-right py-4 px-4 font-semibold text-gray-700">Net Profit</th>
+                    <th className="text-center py-4 px-4 font-semibold text-gray-700">Collection %</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {branchSummaries.map((branch) => (
+                    <tr key={branch.id} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="py-4 px-4">
+                        <div>
+                          <div className="font-medium text-gray-800">{branch.name}</div>
+                          <div className="text-sm text-gray-500">
+                            {branch.engineers} Engineers | {branch.customers} Customers
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-4 px-4 text-right">
+                        <div className="text-blue-600 font-semibold">{formatCurrency(branch.billed)}</div>
+                        <div className="text-xs text-gray-500">Across {branch.customers} accounts</div>
+                      </td>
+                      <td className="py-4 px-4 text-right">
+                        <div className="text-green-600 font-semibold">{formatCurrency(branch.collected)}</div>
+                        <div className="text-xs text-gray-500">Settled for {branch.settledCustomers} customers</div>
+                      </td>
+                      <td className="py-4 px-4 text-right">
+                        <div className="text-orange-600 font-semibold">{formatCurrency(branch.outstanding)}</div>
+                        <div className="text-xs text-gray-500">Pending with {branch.customersWithOutstanding} customers</div>
+                      </td>
+                      <td className="py-4 px-4 text-right text-red-600 font-semibold">
+                        {formatCurrency(branch.expenses)}
+                      </td>
+                      <td className="py-4 px-4 text-right">
+                        <div className="text-purple-600 font-semibold">{formatCurrency(branch.netProfit)}</div>
+                        <div className="text-xs text-gray-500">
+                          {branch.collected ? ((branch.netProfit / branch.collected) * 100).toFixed(1) : '0.0'}% margin
+                        </div>
+                      </td>
+                      <td className="py-4 px-4 text-center">
+                        <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${collectionBadgeClass(branch.collectionRate)}`}>
+                          {branch.collectionRate}%
+                        </span>
+                        <div className="text-xs text-gray-500 mt-1">
+                          {branch.avgCollectionDays} days avg
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="bg-gray-50 font-bold">
+                    <td className="py-4 px-4 text-gray-800">Total</td>
+                    <td className="py-4 px-4 text-right">
+                      <div className="text-blue-600">{formatCurrency(totalBilled)}</div>
+                      <div className="text-xs text-gray-500 font-normal">
+                        {totalCustomers} customers
+                      </div>
+                    </td>
+                    <td className="py-4 px-4 text-right">
+                      <div className="text-green-600">{formatCurrency(totalCollected)}</div>
+                      <div className="text-xs text-gray-500 font-normal">
+                        Settled: {settledCustomers}
+                      </div>
+                    </td>
+                    <td className="py-4 px-4 text-right">
+                      <div className="text-orange-600">{formatCurrency(totalOutstanding)}</div>
+                      <div className="text-xs text-gray-500 font-normal">
+                        Pending: {customersWithOutstanding}
+                      </div>
+                    </td>
+                    <td className="py-4 px-4 text-right text-red-600">
+                      {formatCurrency(totalExpenses)}
+                    </td>
+                    <td className="py-4 px-4 text-right text-purple-600">
+                      {formatCurrency(totalProfit)}
+                    </td>
+                    <td className="py-4 px-4 text-center">
+                      <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm ${collectionBadgeClass(Number(overallCollectionRate))}`}>
+                        {overallCollectionRate}%
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Customer Balance Overview */}
+          <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="text-xl font-bold text-gray-800">Customer Balance Overview</h3>
+                <p className="text-sm text-gray-500">
+                  Monthly billing versus collection by customer
+                </p>
+              </div>
+              <div className="text-sm text-gray-500">
+                Showing {customerBalances.length} customers
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b-2 border-gray-200">
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Customer</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Branch</th>
+                    <th className="text-right py-3 px-4 font-semibold text-gray-700">Billed This Month</th>
+                    <th className="text-right py-3 px-4 font-semibold text-gray-700">Collected</th>
+                    <th className="text-right py-3 px-4 font-semibold text-gray-700">Outstanding</th>
+                    <th className="text-center py-3 px-4 font-semibold text-gray-700">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {customerRows.map((customer) => {
+                    const outstanding = customer.billed - customer.collected;
+                    return (
+                      <tr
+                        key={customer.id}
+                        className="border-b border-gray-100 hover:bg-gray-50"
+                      >
+                        <td className="py-3 px-4">
+                          <div className="font-medium text-gray-800">{customer.name}</div>
+                          <div className="text-xs text-gray-500">Customer ID: {customer.id}</div>
+                        </td>
+                        <td className="py-3 px-4 text-gray-600">{customer.branchName}</td>
+                        <td className="py-3 px-4 text-right text-blue-600 font-semibold">
+                          {formatCurrency(customer.billed)}
+                        </td>
+                        <td className="py-3 px-4 text-right text-green-600 font-semibold">
+                          {formatCurrency(customer.collected)}
+                        </td>
+                        <td className="py-3 px-4 text-right text-orange-600 font-semibold">
+                          {formatCurrency(outstanding)}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium ${customer.statusClasses}`}>
+                            {customer.status}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Collection Performance Visualization */}
+          <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
+            <h3 className="text-xl font-bold text-gray-800 mb-6">Branch Collection Performance</h3>
+            <div className="space-y-6">
+              {branchSummaries.map((branch) => {
+                const collectedPercent = branch.billed ? (branch.collected / branch.billed) * 100 : 0;
+                const outstandingPercent = branch.billed ? (branch.outstanding / branch.billed) * 100 : 0;
+
+                return (
+                  <div key={branch.id}>
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="font-medium text-gray-700">{branch.name}</span>
+                      <div className="flex gap-4 text-sm">
+                        <span className="text-green-600 font-semibold">
+                          Collected {formatCurrency(branch.collected)}
+                        </span>
+                        <span className="text-orange-600 font-semibold">
+                          Outstanding {formatCurrency(branch.outstanding)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-6 overflow-hidden flex">
+                      <div
+                        className="bg-gradient-to-r from-green-500 to-green-600 h-6 flex items-center justify-center text-white text-xs font-semibold"
+                        style={{ width: `${collectedPercent}%` }}
+                      >
+                        {collectedPercent > 12 && `${collectedPercent.toFixed(0)}% Collected`}
+                      </div>
+                      <div
+                        className="bg-gradient-to-r from-orange-400 to-orange-500 h-6 flex items-center justify-center text-white text-xs font-semibold"
+                        style={{ width: `${outstandingPercent}%` }}
+                      >
+                        {outstandingPercent > 12 && `${outstandingPercent.toFixed(0)}% Outstanding`}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Original Stats Grid */}
+          <div className="grid grid-cols-4 gap-6">
+            <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-xl p-6 text-white shadow-lg">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-indigo-100 text-sm mb-1">Total Engineers</p>
+                  <p className="text-4xl font-bold">
+                    {branchSummaries.reduce((sum, branch) => sum + branch.engineers, 0)}
+                  </p>
+                </div>
+                <Users size={40} className="text-indigo-200" />
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-xl p-6 text-white shadow-lg">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-yellow-100 text-sm mb-1">Inventory Items</p>
+                  <p className="text-4xl font-bold">330</p>
+                </div>
+                <Package size={40} className="text-yellow-200" />
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl p-6 text-white shadow-lg">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-emerald-100 text-sm mb-1">Total Customers</p>
+                  <p className="text-4xl font-bold">{totalCustomers}</p>
+                </div>
+                <Users size={40} className="text-emerald-200" />
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-pink-500 to-pink-600 rounded-xl p-6 text-white shadow-lg">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-pink-100 text-sm mb-1">Pending Approvals</p>
+                  <p className="text-4xl font-bold">10</p>
+                </div>
+                <AlertCircle size={40} className="text-pink-200" />
+              </div>
+            </div>
           </div>
         </div>
-      </footer>
+      </div>
     </div>
   );
-};
-
-export default ModernBusinessLandingPage;
+}

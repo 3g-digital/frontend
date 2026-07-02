@@ -65,6 +65,18 @@ const SummaryApi = {
         url : `${backendDomain}/api/lead-convert`,
         method: "post"
     },
+    convertToDealer: {
+        url : `${backendDomain}/api/lead-convert-dealer`,
+        method: "post"
+    },
+    convertToDistributor: {
+        url : `${backendDomain}/api/lead-convert-distributor`,
+        method: "post"
+    },
+    convertToExistingCustomer: {
+        url : `${backendDomain}/api/lead-convert-existing-customer`,
+        method: "post"
+    },
     search : {
         url : `${backendDomain}/api/search`,
         method: "get"
@@ -83,6 +95,18 @@ const SummaryApi = {
     },
     updateCustomer: {
         url : `${backendDomain}/api/update-customer`,
+        method: "post"
+    },
+    checkDuplicateContactPerson: {
+        url : `${backendDomain}/api/check-duplicate-contact-person`,
+        method: "get"
+    },
+    verifyPassword: {
+        url : `${backendDomain}/api/verify-password`,
+        method: "post"
+    },
+    addOldProject: {
+        url: `${backendDomain}/api/add-old-project`,
         method: "post"
     },
     getAllInventoryItems: {
@@ -115,6 +139,14 @@ const SummaryApi = {
     },
     checkSerialNumber: {
         url: `${backendDomain}/api/check-serial`,
+        method: "get"
+    },
+    getStockHistory: {
+        url: `${backendDomain}/api/stock-history`,
+        method: "get"
+    },
+    getInventoryCurrentStock: {
+        url: `${backendDomain}/api/inventory-current-stock`,
         method: "get"
     },
     getManagerTechnician: {
@@ -163,6 +195,10 @@ const SummaryApi = {
       },
       createWorkOrder: {
         url : `${backendDomain}/api/create-work-orders`,
+        method: "post"
+      },
+      addComplaint: {
+        url : `${backendDomain}/api/add-complaint`,
         method: "post"
       },
       getWorkOrders: {
@@ -229,8 +265,36 @@ const SummaryApi = {
         url : `${backendDomain}/api/get-manager-projects`,
         method: "get"
       },
+      getManagerFinancialSummary: {
+        url: `${backendDomain}/api/manager/financial-summary`,
+        method: "get"
+      },
+      getAdminFinancialSummary: {
+        url: `${backendDomain}/api/admin/financial-summary`,
+        method: "get"
+      },
+      getBranchBalanceOverview: {
+        url: `${backendDomain}/api/admin/branch-balance-overview`,
+        method: "get"
+      },
+      getManagerBalanceOverview: {
+        url: `${backendDomain}/api/manager/balance-overview`,
+        method: "get"
+      },
+      getAvailableMonths: {
+        url: `${backendDomain}/api/get-available-months`,
+        method: "get"
+      },
       approveWorkOrder: {
         url : `${backendDomain}/api/approve-order`,
+        method: "post"
+      },
+      cancelWorkOrder: {
+        url : `${backendDomain}/api/cancel-work-order`,
+        method: "post"
+      },
+      addManagerInstruction: {
+        url : `${backendDomain}/api/add-manager-instruction`,
         method: "post"
       },
       rejectBill: {
@@ -257,6 +321,10 @@ const SummaryApi = {
         url : `${backendDomain}/api/reject-technician-project-transfer`,
         method: "post"
       },
+      closeProject: {
+        url : `${backendDomain}/api/close-project`,
+        method: "post"
+      },
       getReturnedInventory: {
         url: `${backendDomain}/api/get-returned-inventory`,
         method: "get"
@@ -264,6 +332,14 @@ const SummaryApi = {
       confirmReturnedInventory:{
         url : `${backendDomain}/api/confirm-returned-inventory`,
         method: "post"
+      },
+      rejectReturnedInventory: {
+        url: `${backendDomain}/api/reject-returned-inventory`,
+        method: "post"
+      },
+      getTechnicianReturnRequests: {
+        url: `${backendDomain}/api/get-technician-return-requests`,
+        method: "get"
       },
       getSerialNumberDetails : {
         url: `${backendDomain}/api/serial-number-detail`,
@@ -319,6 +395,160 @@ const SummaryApi = {
       },
       resetSystem: {
         url: `${backendDomain}/api/reset-system`,
+        method: "post"
+      },
+      
+      // Dealer APIs
+      createDealer: {
+        url: `${backendDomain}/api/create-dealer`,
+        method: "post"
+      },
+      getAllDealers: {
+        url: `${backendDomain}/api/get-all-dealers`,
+        method: "get"
+      },
+      getDealer: {
+        url: `${backendDomain}/api/get-dealer`,
+        method: "get"
+      },
+      updateDealer: {
+        url: `${backendDomain}/api/update-dealer`,
+        method: "post"
+      },
+      addDealerRemark: {
+        url: `${backendDomain}/api/dealer-remarks`,
+        method: "post"
+      },
+      
+      // Distributor APIs
+      createDistributor: {
+        url: `${backendDomain}/api/create-distributor`,
+        method: "post"
+      },
+      getAllDistributors: {
+        url: `${backendDomain}/api/get-all-distributors`,
+        method: "get"
+      },
+      getDistributor: {
+        url: `${backendDomain}/api/get-distributor`,
+        method: "get"
+      },
+      updateDistributor: {
+        url: `${backendDomain}/api/update-distributor`,
+        method: "post"
+      },
+      addDistributorRemark: {
+        url: `${backendDomain}/api/distributor-remarks`,
+        method: "post"
+      },
+      
+      // Sales APIs
+      createSalesBill: {
+        url: `${backendDomain}/api/create-sales-bill`,
+        method: "post"
+      },
+      getSalesBills: {
+        url: `${backendDomain}/api/get-sales-bills`,
+        method: "get"
+      },
+      getBillDetailsById: {
+        url: `${backendDomain}/api/get-bill-details`,
+        method: "get"
+      },
+      processPayment: {
+        url: `${backendDomain}/api/process-payment`,
+        method: "post"
+      },
+      generateQRCode: {
+        url: `${backendDomain}/api/generate-qr`,
+        method: "get"
+      },
+      getDealerBills: {
+        url: `${backendDomain}/api/get-dealer-bills`,
+        method: "get"
+      },
+      getDistributorBills: {
+        url: `${backendDomain}/api/get-distributor-bills`,
+        method: "get"
+      },
+      processBulkPayment: {
+        url: `${backendDomain}/api/process-bulk-payment`,
+        method: "post"
+      },
+
+      // Transaction History API
+      getTransactionHistory: {
+        url: `${backendDomain}/api/transaction-history`,
+        method: "get"
+      },
+      
+      // Customer billing APIs
+      getCustomerBills: {
+        url: `${backendDomain}/api/get-customer-bills`,
+        method: "get"
+      },
+      createCustomerBill: {
+        url: `${backendDomain}/api/create-customer-bill`,
+        method: "post"
+      },
+      processCustomerBulkPayment: {
+        url: `${backendDomain}/api/process-customer-bulk-payment`,
+        method: "post"
+      },
+
+      // Bank Account APIs (Admin only)
+      getBankAccounts: {
+        url: `${backendDomain}/api/get-bank-accounts`,
+        method: "get"
+      },
+      addBankAccount: {
+        url: `${backendDomain}/api/add-bank-account`,
+        method: "post"
+      },
+      updateBankAccount: {
+        url: `${backendDomain}/api/update-bank-account`,
+        method: "put"
+      },
+      deleteBankAccount: {
+        url: `${backendDomain}/api/delete-bank-account`,
+        method: "delete"
+      },
+
+      // Profile Picture APIs
+      uploadProfilePicture: {
+        url: `${backendDomain}/api/upload-profile-picture`,
+        method: "post"
+      },
+    deleteProfilePicture: {
+        url: `${backendDomain}/api/delete-profile-picture`,
+        method: "delete"
+      },
+      registerNotificationToken: {
+        url: `${backendDomain}/api/notifications/token`,
+        method: "post"
+      },
+      removeNotificationToken: {
+        url: `${backendDomain}/api/notifications/token`,
+        method: "delete"
+      },
+
+      // Inventory Export/Import APIs
+      exportInventory: {
+        url: `${backendDomain}/api/export-inventory`,
+        method: "get"
+      },
+      importInventory: {
+        url: `${backendDomain}/api/import-inventory`,
+        method: "post"
+      },
+
+      // Software Backup/Restore APIs (Admin only)
+      exportFullBackup: {
+        url: `${backendDomain}/api/export-full-backup`,
+        method: "get"
+      },
+      importFullBackup: {
+        url: `${backendDomain}/api/import-full-backup`,
         method: "post"
       }
 }

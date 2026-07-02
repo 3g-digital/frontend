@@ -1,9 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { FiSearch, FiUser } from 'react-icons/fi';
+import React, { useState, useEffect, useRef } from 'react';
+import { FiSearch, FiUser, FiRefreshCw, FiChevronDown } from 'react-icons/fi';
+import { LuArrowDownUp, LuArrowUpDown } from "react-icons/lu";
 import SummaryApi from '../../common';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import { useAuth } from '../../context/AuthContext';
+import { useNotification } from '../../context/NotificationContext';
 import AssignTechnicianModal from './AssignTechnicianModal';
+
+// Ensure global modal registry exists
+if (!window.__modalRegistry) {
+  window.__modalRegistry = new Set();
+}
 
 const statusColors = {
   pending: 'bg-yellow-100 text-yellow-800',
@@ -15,6 +22,41 @@ const rowBackgroundColors = {
 
 const WorkOrdersPage = () => {
   const { user } = useAuth();
+  const { showNotification } = useNotification();
+  const managerName = `${user?.firstName || 'Manager'} ${user?.lastName || ''}`.trim();
+  const canCancelWorkOrder = user?.role === 'manager' || user?.role === 'admin';
+
+  // Modal registry setup for cancel modals
+  const cancelModalId = useRef(Math.random().toString(36).substr(2, 9));
+  const cancelConfirmModalId = useRef(Math.random().toString(36).substr(2, 9));
+  const numericZIndex = useRef(50); // z-50 from the modal divs
+
+  // Double ESC and double click states for cancel reason modal
+  const [escPressCountReason, setEscPressCountReason] = useState(0);
+  const [escPressTimerReason, setEscPressTimerReason] = useState(null);
+  const [clickCountReason, setClickCountReason] = useState(0);
+  const [clickTimerReason, setClickTimerReason] = useState(null);
+
+  // Double ESC and double click states for cancel confirm modal
+  const [escPressCountConfirm, setEscPressCountConfirm] = useState(0);
+  const [escPressTimerConfirm, setEscPressTimerConfirm] = useState(null);
+  const [clickCountConfirm, setClickCountConfirm] = useState(0);
+  const [clickTimerConfirm, setClickTimerConfirm] = useState(null);
+
+  // Check if this modal is the topmost modal
+  const isTopmostModal = () => {
+    if (!window.__modalRegistry || window.__modalRegistry.size === 0) return true;
+
+    let highestZIndex = 0;
+    window.__modalRegistry.forEach(modal => {
+      if (modal.zIndex > highestZIndex) {
+        highestZIndex = modal.zIndex;
+      }
+    });
+
+    return numericZIndex.current >= highestZIndex;
+  };
+
   const [workOrders, setWorkOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -27,8 +69,19 @@ const WorkOrdersPage = () => {
   // State for assignment modal
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
-  const [expandedRow, setExpandedRow] = useState(null);
   const [lastRefreshTime, setLastRefreshTime] = useState(0);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showCancelConfirmModal, setShowCancelConfirmModal] = useState(false);
+  const [selectedCancelOrder, setSelectedCancelOrder] = useState(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelError, setCancelError] = useState('');
+  const [cancelLoading, setCancelLoading] = useState(false);
+
+  // Sort dropdown states
+  const [isSortDropdownOpen, setIsSortDropdownOpen] = useState(false);
+  const [sortField, setSortField] = useState('dateCreated'); // 'dateCreated', 'customerName', 'companyName'
+  const [sortOrder, setSortOrder] = useState('desc'); // 'asc' or 'desc'
+  const sortDropdownRef = useRef(null);
   
   const fetchWorkOrders = async (forceFresh = false) => {
     try {
@@ -143,15 +196,248 @@ const fetchFreshWorkOrders = async (isBackground = false) => {
   useEffect(() => {
     fetchWorkOrders();
   }, [user.selectedBranch, window.location.search]);
-  
-  const handleRowClick = (orderId) => {
-    setExpandedRow(expandedRow === orderId ? null : orderId);
+
+  // Register/unregister cancel reason modal in global registry
+  useEffect(() => {
+    if (showCancelModal) {
+      window.__modalRegistry.add({
+        id: cancelModalId.current,
+        zIndex: numericZIndex.current
+      });
+    } else {
+      window.__modalRegistry.forEach(modal => {
+        if (modal.id === cancelModalId.current) {
+          window.__modalRegistry.delete(modal);
+        }
+      });
+    }
+
+    return () => {
+      window.__modalRegistry.forEach(modal => {
+        if (modal.id === cancelModalId.current) {
+          window.__modalRegistry.delete(modal);
+        }
+      });
+    };
+  }, [showCancelModal]);
+
+  // Register/unregister cancel confirm modal in global registry
+  useEffect(() => {
+    if (showCancelConfirmModal) {
+      window.__modalRegistry.add({
+        id: cancelConfirmModalId.current,
+        zIndex: numericZIndex.current
+      });
+    } else {
+      window.__modalRegistry.forEach(modal => {
+        if (modal.id === cancelConfirmModalId.current) {
+          window.__modalRegistry.delete(modal);
+        }
+      });
+    }
+
+    return () => {
+      window.__modalRegistry.forEach(modal => {
+        if (modal.id === cancelConfirmModalId.current) {
+          window.__modalRegistry.delete(modal);
+        }
+      });
+    };
+  }, [showCancelConfirmModal]);
+
+  // Reset ESC and click counters when modals open/close
+  useEffect(() => {
+    if (!showCancelModal) {
+      setEscPressCountReason(0);
+      setClickCountReason(0);
+      if (escPressTimerReason) clearTimeout(escPressTimerReason);
+      if (clickTimerReason) clearTimeout(clickTimerReason);
+    }
+  }, [showCancelModal]);
+
+  useEffect(() => {
+    if (!showCancelConfirmModal) {
+      setEscPressCountConfirm(0);
+      setClickCountConfirm(0);
+      if (escPressTimerConfirm) clearTimeout(escPressTimerConfirm);
+      if (clickTimerConfirm) clearTimeout(clickTimerConfirm);
+    }
+  }, [showCancelConfirmModal]);
+
+  // Double ESC handler for cancel reason modal
+  useEffect(() => {
+    const handleEsc = (event) => {
+      if (event.key === 'Escape' && showCancelModal && isTopmostModal()) {
+        if (escPressCountReason === 0) {
+          setEscPressCountReason(1);
+          const timer = setTimeout(() => {
+            showNotification('info', 'To close the popup, press ESC twice', 3000);
+            setEscPressCountReason(0);
+          }, 800);
+          setEscPressTimerReason(timer);
+        } else if (escPressCountReason === 1) {
+          clearTimeout(escPressTimerReason);
+          setEscPressCountReason(0);
+          closeCancelModals();
+        }
+      }
+    };
+
+    if (showCancelModal) {
+      document.addEventListener('keydown', handleEsc);
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleEsc);
+      if (escPressTimerReason) clearTimeout(escPressTimerReason);
+    };
+  }, [showCancelModal, escPressCountReason, escPressTimerReason, showNotification]);
+
+  // Double ESC handler for cancel confirm modal
+  useEffect(() => {
+    const handleEsc = (event) => {
+      if (event.key === 'Escape' && showCancelConfirmModal && isTopmostModal()) {
+        if (escPressCountConfirm === 0) {
+          setEscPressCountConfirm(1);
+          const timer = setTimeout(() => {
+            showNotification('info', 'To close the popup, press ESC twice', 3000);
+            setEscPressCountConfirm(0);
+          }, 800);
+          setEscPressTimerConfirm(timer);
+        } else if (escPressCountConfirm === 1) {
+          clearTimeout(escPressTimerConfirm);
+          setEscPressCountConfirm(0);
+          closeCancelModals();
+        }
+      }
+    };
+
+    if (showCancelConfirmModal) {
+      document.addEventListener('keydown', handleEsc);
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleEsc);
+      if (escPressTimerConfirm) clearTimeout(escPressTimerConfirm);
+    };
+  }, [showCancelConfirmModal, escPressCountConfirm, escPressTimerConfirm, showNotification]);
+
+  const handleRowClick = (order) => {
+    // Directly open AssignTechnicianModal when row is clicked
+    setSelectedOrder(order);
+    setShowAssignModal(true);
   };
-  
+
   const handleAssignTechnician = (order) => {
     console.log("Assigning order:", order);
     setSelectedOrder(order);
     setShowAssignModal(true);
+  };
+
+  const handleCancelClick = (order) => {
+    setSelectedCancelOrder(order);
+    setCancelReason('');
+    setCancelError('');
+    setShowCancelModal(true);
+    setShowCancelConfirmModal(false);
+  };
+
+  // Handle overlay click for cancel reason modal
+  const handleOverlayClickReason = () => {
+    if (!isTopmostModal()) return;
+
+    if (clickCountReason === 0) {
+      setClickCountReason(1);
+      const timer = setTimeout(() => {
+        showNotification('info', 'To close the popup, click twice on the background', 3000);
+        setClickCountReason(0);
+      }, 800);
+      setClickTimerReason(timer);
+    } else if (clickCountReason === 1) {
+      if (clickTimerReason) clearTimeout(clickTimerReason);
+      setClickCountReason(0);
+      closeCancelModals();
+    }
+  };
+
+  // Handle overlay click for cancel confirm modal
+  const handleOverlayClickConfirm = () => {
+    if (!isTopmostModal()) return;
+
+    if (clickCountConfirm === 0) {
+      setClickCountConfirm(1);
+      const timer = setTimeout(() => {
+        showNotification('info', 'To close the popup, click twice on the background', 3000);
+        setClickCountConfirm(0);
+      }, 800);
+      setClickTimerConfirm(timer);
+    } else if (clickCountConfirm === 1) {
+      if (clickTimerConfirm) clearTimeout(clickTimerConfirm);
+      setClickCountConfirm(0);
+      closeCancelModals();
+    }
+  };
+
+  const closeCancelModals = () => {
+    setShowCancelModal(false);
+    setShowCancelConfirmModal(false);
+    setSelectedCancelOrder(null);
+    setCancelReason('');
+    setCancelError('');
+    setCancelLoading(false);
+  };
+
+  const proceedToCancelConfirmation = () => {
+    if (!cancelReason.trim()) {
+      setCancelError('Please provide a cancellation reason.');
+      return;
+    }
+    setCancelError('');
+    setShowCancelModal(false);
+    setShowCancelConfirmModal(true);
+  };
+
+  const handleCancelOrder = async () => {
+    if (!selectedCancelOrder) return;
+
+    try {
+      setCancelLoading(true);
+      setCancelError('');
+
+      const response = await fetch(SummaryApi.cancelWorkOrder.url, {
+        method: SummaryApi.cancelWorkOrder.method,
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          customerId: selectedCancelOrder.customerId,
+          orderId: selectedCancelOrder.orderId,
+          reason: cancelReason.trim()
+        })
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.message || 'Failed to cancel work order');
+      }
+
+      const updatedOrders = workOrders.filter(order =>
+        !(order.orderId === selectedCancelOrder.orderId && order.customerId === selectedCancelOrder.customerId)
+      );
+
+      setWorkOrders(updatedOrders);
+      applyFilters(updatedOrders, categoryFilter);
+      localStorage.setItem('workOrdersData', JSON.stringify(updatedOrders));
+      closeCancelModals();
+      await fetchFreshWorkOrders(true);
+    } catch (error) {
+      console.error('Error cancelling work order:', error);
+      setCancelError(error.message || 'Server error. Please try again.');
+    } finally {
+      setCancelLoading(false);
+    }
   };
   
   const handleAssignmentSuccess = (updatedOrder) => {
@@ -178,23 +464,23 @@ const fetchFreshWorkOrders = async (isBackground = false) => {
   // Apply filters and search to the work orders
   const applyFilters = (ordersToFilter, category) => {
     let filtered = [...ordersToFilter];
-    
+
     // Apply category filter
     if (category !== 'all') {
       if (category === 'installation') {
-        filtered = filtered.filter(order => 
+        filtered = filtered.filter(order =>
           order.projectCategory === 'New Installation' || !order.projectCategory
         );
       } else if (category === 'repair') {
-        filtered = filtered.filter(order => 
+        filtered = filtered.filter(order =>
           order.projectCategory === 'Repair'
         );
       }
     }
-    
+
     // Apply search query
     if (searchQuery.trim() !== '') {
-      filtered = filtered.filter(order => 
+      filtered = filtered.filter(order =>
         (order.customerName && order.customerName.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (order.customerPhone && order.customerPhone.includes(searchQuery)) ||
         (order.orderId && order.orderId.includes(searchQuery)) ||
@@ -202,7 +488,33 @@ const fetchFreshWorkOrders = async (isBackground = false) => {
         (order.projectType && order.projectType.toLowerCase().includes(searchQuery.toLowerCase()))
       );
     }
-    
+
+    // Apply sorting
+    if (sortField === 'dateCreated') {
+      // Sort by creation date
+      filtered.sort((a, b) => {
+        const aDate = new Date(a.createdAt).getTime();
+        const bDate = new Date(b.createdAt).getTime();
+        return sortOrder === 'desc' ? bDate - aDate : aDate - bDate;
+      });
+    } else if (sortField === 'customerName') {
+      // Sort by customer name
+      filtered.sort((a, b) => {
+        const nameA = (a.customerName || '').toLowerCase();
+        const nameB = (b.customerName || '').toLowerCase();
+        const comparison = nameA.localeCompare(nameB);
+        return sortOrder === 'asc' ? comparison : -comparison;
+      });
+    } else if (sortField === 'companyName') {
+      // Sort by company/firm name
+      filtered.sort((a, b) => {
+        const companyA = (a.customerFirmName || '').toLowerCase();
+        const companyB = (b.customerFirmName || '').toLowerCase();
+        const comparison = companyA.localeCompare(companyB);
+        return sortOrder === 'asc' ? comparison : -comparison;
+      });
+    }
+
     setFilteredOrders(filtered);
   };
   
@@ -212,10 +524,37 @@ const fetchFreshWorkOrders = async (isBackground = false) => {
     applyFilters(workOrders, category);
   };
   
-  // Handle search
+  // Handle search and sorting
   useEffect(() => {
     applyFilters(workOrders, categoryFilter);
-  }, [searchQuery, workOrders]);
+  }, [searchQuery, workOrders, sortField, sortOrder]);
+
+  // Close sort dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (sortDropdownRef.current && !sortDropdownRef.current.contains(event.target)) {
+        setIsSortDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // Handle sort selection
+  const handleSortSelection = (field) => {
+    if (sortField === field) {
+      // Toggle order if same field selected
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      // Set new field with default order
+      setSortField(field);
+      setSortOrder(field === 'dateCreated' ? 'desc' : 'asc');
+    }
+    setIsSortDropdownOpen(false);
+  };
   
   const formatDate = (dateString) => {
     const options = { 
@@ -235,8 +574,88 @@ const fetchFreshWorkOrders = async (isBackground = false) => {
       {/* Main Container with White Box */}
       <div className="p-6 bg-white rounded-lg shadow-md max-w-[1300px]">
         {/* Header */}
-        <div className="mb-4">
+        <div className="pb-4 flex justify-between items-center">
           <h1 className="text-2xl font-semibold text-gray-800">Pending Work Orders</h1>
+
+          <div className="flex items-center gap-3">
+            {/* Sort Dropdown */}
+            <div className="relative" ref={sortDropdownRef}>
+              <button
+                onClick={() => setIsSortDropdownOpen(!isSortDropdownOpen)}
+                className="flex items-center px-4 py-2 rounded-full text-sm font-medium bg-gray-100 text-gray-600 hover:bg-gray-200"
+              >
+                {sortOrder === 'asc' ? (
+                  <LuArrowDownUp className="h-4 w-4 mr-2" />
+                ) : (
+                  <LuArrowUpDown className="h-4 w-4 mr-2" />
+                )}
+                Sort
+                <FiChevronDown className="ml-2 h-4 w-4" />
+              </button>
+
+              {/* Sort Dropdown Menu */}
+              {isSortDropdownOpen && (
+                <div className="absolute right-0 mt-2 w-56 bg-white rounded-md shadow-lg z-50 border border-gray-200">
+                  <div className="py-1">
+                    <button
+                      onClick={() => handleSortSelection('customerName')}
+                      className={`flex items-center justify-between w-full px-4 py-2 text-sm text-left hover:bg-gray-100 ${
+                        sortField === 'customerName' ? 'bg-gray-50 text-teal-600 font-medium' : 'text-gray-700'
+                      }`}
+                    >
+                      <span>Customer Name</span>
+                      {sortField === 'customerName' && (
+                        sortOrder === 'asc' ? (
+                          <LuArrowDownUp className="h-4 w-4" />
+                        ) : (
+                          <LuArrowUpDown className="h-4 w-4" />
+                        )
+                      )}
+                    </button>
+                    <button
+                      onClick={() => handleSortSelection('companyName')}
+                      className={`flex items-center justify-between w-full px-4 py-2 text-sm text-left hover:bg-gray-100 ${
+                        sortField === 'companyName' ? 'bg-gray-50 text-teal-600 font-medium' : 'text-gray-700'
+                      }`}
+                    >
+                      <span>Company Name</span>
+                      {sortField === 'companyName' && (
+                        sortOrder === 'asc' ? (
+                          <LuArrowDownUp className="h-4 w-4" />
+                        ) : (
+                          <LuArrowUpDown className="h-4 w-4" />
+                        )
+                      )}
+                    </button>
+                    <button
+                      onClick={() => handleSortSelection('dateCreated')}
+                      className={`flex items-center justify-between w-full px-4 py-2 text-sm text-left hover:bg-gray-100 ${
+                        sortField === 'dateCreated' ? 'bg-gray-50 text-teal-600 font-medium' : 'text-gray-700'
+                      }`}
+                    >
+                      <span>Date Created</span>
+                      {sortField === 'dateCreated' && (
+                        sortOrder === 'asc' ? (
+                          <LuArrowDownUp className="h-4 w-4" />
+                        ) : (
+                          <LuArrowUpDown className="h-4 w-4" />
+                        )
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Refresh Button */}
+            <button
+              onClick={() => fetchFreshWorkOrders()}
+              className="p-2 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700"
+              title="Refresh Work Orders"
+            >
+              <FiRefreshCw className="w-5 h-5" />
+            </button>
+          </div>
         </div>
         
         {/* Filter Buttons */}
@@ -306,23 +725,22 @@ const fetchFreshWorkOrders = async (isBackground = false) => {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CUSTOMER</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PROJECT TYPE</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CATEGORY</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CREATED BY</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DATE CREATED</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">STATUS</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">TECHNICIAN</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ENGINEER</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {filteredOrders.map((order, index) => (
                     <React.Fragment key={`${order.customerId}-${order.orderId}`}>
-                      <tr 
+                      <tr
                         className={`cursor-pointer hover:bg-gray-50 ${
-                          expandedRow === `${order.customerId}-${order.orderId}` 
-                            ? 'bg-gray-50' 
-                            : order.projectCategory === 'Repair' 
-                              ? 'bg-orange-50' 
-                              : 'bg-yellow-50'
+                          order.projectCategory === 'Repair'
+                            ? 'bg-orange-50'
+                            : 'bg-yellow-50'
                         }`}
-                        onClick={() => handleRowClick(`${order.customerId}-${order.orderId}`)}
+                        onClick={() => handleRowClick(order)}
                       >
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-medium ${
@@ -333,7 +751,12 @@ const fetchFreshWorkOrders = async (isBackground = false) => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="font-medium text-gray-900">{order.customerName}</div>
-                          <div className="text-xs text-gray-400">{order.orderId}</div>
+                          {order.customerFirmName && (
+                            <div className="text-xs text-gray-400">{order.customerFirmName}</div>
+                          )}
+                          {order.customerAddress && (
+                            <div className="text-xs text-gray-400">{order.customerAddress}</div>
+                          )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className="px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
@@ -342,12 +765,28 @@ const fetchFreshWorkOrders = async (isBackground = false) => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`px-2 py-1 rounded-full text-xs ${
-                            order.projectCategory === 'Repair' 
-                              ? 'bg-orange-100 text-orange-800' 
+                            order.projectCategory === 'Repair'
+                              ? 'bg-orange-100 text-orange-800'
                               : 'bg-green-100 text-green-800'
                           }`}>
                             {order.projectCategory === 'Repair' ? 'Complaint' : 'New Installation'}
                           </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          {order.createdByName ? (
+                            <div>
+                              <div className="font-medium text-gray-900">{order.createdByName}</div>
+                              {order.createdByRole && (
+                                <div className={`text-xs ${
+                                  order.createdByRole === 'admin' ? 'text-purple-600' : 'text-blue-600'
+                                }`}>
+                                  {order.createdByRole === 'admin' ? 'Admin' : 'Manager'}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {formatDate(order.createdAt)}
@@ -361,59 +800,6 @@ const fetchFreshWorkOrders = async (isBackground = false) => {
                           <span className="text-yellow-600">Not Assigned</span>
                         </td>
                       </tr>
-                      
-                      {/* Expanded row */}
-                      {expandedRow === `${order.customerId}-${order.orderId}` && (
-                        <tr>
-                          <td colSpan="7" className="px-6 py-4 bg-gray-50 border-b">
-                            <div className="space-y-4">
-                               {/* Check if this was a transferred project */}
-        {order.statusHistory && order.statusHistory.some(history => history.status === 'transferring') && (
-          <div className="bg-red-50 p-3 rounded-lg border-l-4 border-red-500">
-            <h4 className="font-semibold text-red-700">Transferred Project</h4>
-            <p className="mt-1 text-gray-700">
-              {order.statusHistory.find(history => history.status === 'transferring')?.remark || 'No transfer reason provided'}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">
-              Transfer accepted by manager: {
-                order.statusHistory.find(history => 
-                  history.status === 'pending' && 
-                  order.statusHistory.some(h => h.status === 'transferring')
-                )?.remark || 'No transfer acceptance note provided'
-              }
-            </p>
-          </div>
-        )}
-        
-                              {/* Technical details / Remarks */}
-                              {order.initialRemark && (
-                                <div>
-                                  <h4 className="font-semibold">
-                                    {order.projectCategory === 'Repair' 
-                                      ? 'Complaint Details:' 
-                                      : 'Initial Requirements:'}
-                                  </h4>
-                                  <p className="mt-1 text-gray-600">{order.initialRemark}</p>
-                                </div>
-                              )}
-                              
-                              {/* Assignment button */}
-                              <div className="flex">
-                                <button 
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleAssignTechnician(order);
-                                  }}
-                                  className="inline-flex items-center px-4 py-1.5 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-500 hover:bg-blue-600"
-                                >
-                                  <FiUser className="mr-2" />
-                                  Assign Technician
-                                </button>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
                     </React.Fragment>
                   ))}
                 </tbody>
@@ -444,12 +830,88 @@ const fetchFreshWorkOrders = async (isBackground = false) => {
       </div>
       
       {/* Assign Technician Modal */}
-      <AssignTechnicianModal 
+      <AssignTechnicianModal
         isOpen={showAssignModal}
         onClose={() => setShowAssignModal(false)}
         workOrder={selectedOrder}
         onSuccess={handleAssignmentSuccess}
+        canCancelWorkOrder={canCancelWorkOrder}
+        onCancelClick={handleCancelClick}
       />
+
+      {/* Cancel Work Order Reason Modal */}
+      {canCancelWorkOrder && showCancelModal && selectedCancelOrder && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4" onClick={handleOverlayClickReason}>
+          <div className="bg-white rounded-lg w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-4">Cancel Work Order</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Please provide a reason for cancelling work order <strong>{selectedCancelOrder.orderId}</strong>.
+            </p>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Cancellation Reason*
+            </label>
+            <textarea
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              rows={4}
+              className="w-full border rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-red-400"
+              placeholder="Enter cancellation reason..."
+            ></textarea>
+            {cancelError && (
+              <p className="text-sm text-red-600 mt-2">{cancelError}</p>
+            )}
+            <div className="mt-6 flex justify-end space-x-3">
+              <button
+                onClick={closeCancelModals}
+                className="px-4 py-2 bg-gray-200 rounded-md hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={proceedToCancelConfirmation}
+                className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel Work Order Confirmation Modal */}
+      {canCancelWorkOrder && showCancelConfirmModal && selectedCancelOrder && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4" onClick={handleOverlayClickConfirm}>
+          <div className="bg-white rounded-lg w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-4">Confirm Cancellation</h3>
+            <p className="mb-4 text-sm text-gray-700">
+              {managerName}, are you sure you want to cancel work order{' '}
+              <strong>{selectedCancelOrder.orderId}</strong> for {selectedCancelOrder.customerName}?
+            </p>
+            <p className="text-sm text-gray-600 mb-4">
+              Reason: <span className="font-medium text-gray-800">{cancelReason}</span>
+            </p>
+            {cancelError && (
+              <p className="text-sm text-red-600 mb-4">{cancelError}</p>
+            )}
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={closeCancelModals}
+                className="px-4 py-2 bg-gray-200 rounded-md hover:bg-gray-300"
+                disabled={cancelLoading}
+              >
+                No
+              </button>
+              <button
+                onClick={handleCancelOrder}
+                disabled={cancelLoading}
+                className={`px-4 py-2 rounded-md text-white ${cancelLoading ? 'bg-red-300 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600'}`}
+              >
+                {cancelLoading ? 'Cancelling...' : 'Yes, Cancel'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

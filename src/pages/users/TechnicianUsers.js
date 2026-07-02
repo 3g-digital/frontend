@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { FiEdit, FiTrash2, FiPlus, FiSearch, FiUser, FiPackage, FiList } from 'react-icons/fi';
+import { FiEdit, FiTrash2, FiPlus, FiSearch, FiUser, FiPackage, FiList, FiChevronDown } from 'react-icons/fi';
+import { LuArrowDownUp, LuArrowUpDown } from "react-icons/lu";
 import SummaryApi from '../../common';
 import { useAuth } from '../../context/AuthContext';
 import AddTechnicianModal from '../../components/AddTechnicianModal'; // Updated import path
@@ -20,25 +21,29 @@ const TechnicianUsers = () => {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedTechnicianId, setSelectedTechnicianId] = useState(null);
   
-  // States for expanded rows and inventory assignment
-  const [expandedTechnician, setExpandedTechnician] = useState(null);
+  // States for inventory assignment
   const [showAssignInventoryModal, setShowAssignInventoryModal] = useState(false);
   const [selectedTechnician, setSelectedTechnician] = useState(null);
-  
+
   // New state for technician inventory modal
   const [showInventoryModal, setShowInventoryModal] = useState(false);
   const [selectedTechnicianForInventory, setSelectedTechnicianForInventory] = useState(null);
-  
+
+  // Refresh trigger for TechnicianInventoryModal
+  const [inventoryRefreshTrigger, setInventoryRefreshTrigger] = useState(0);
+
   // Last refresh time tracking
   const [lastRefreshTime, setLastRefreshTime] = useState(0);
-  
+
   // Cache staleness time - 15 minutes
   const CACHE_STALENESS_TIME = 15 * 60 * 1000;
 
-  const handleRowClick = (technicianId) => {
-    setExpandedTechnician(expandedTechnician === technicianId ? null : technicianId);
-  };
-  
+  // Sorting states
+  const [sortOrder, setSortOrder] = useState('asc'); // asc = A to Z for names
+  const [sortField, setSortField] = useState('name'); // 'date' or 'name'
+  const [isSortDropdownOpen, setIsSortDropdownOpen] = useState(false);
+  const sortDropdownRef = useRef(null);
+
   const fetchTechnicians = async (forceFresh = false) => {
     try {
       // Get branch from URL params first, then fallback to user.selectedBranch
@@ -48,18 +53,20 @@ const TechnicianUsers = () => {
 
       // Check for cached data
       const cachedTechnicians = localStorage.getItem(cacheKey);
-      
-      // Use cached data if available and not forcing fresh data
+
+      // Use cached data if available and not forcing fresh data (instant load!)
       if (!forceFresh && cachedTechnicians) {
-        setTechnicians(JSON.parse(cachedTechnicians));
-        
-        // Fetch fresh data in background
+        const parsedTechnicians = JSON.parse(cachedTechnicians);
+        setTechnicians(parsedTechnicians);
+        // console.log("Using cached technician data");
+
+        // Fetch fresh data in background silently
         fetchFreshTechniciansInBackground();
         setLoading(false);
         return;
       }
-      
-      // If no valid cache or force fresh, fetch new data
+
+      // If no cache or force fresh, show loading and fetch new data
       setLoading(true);
       await fetchFreshTechnicians();
     } catch (err) {
@@ -69,9 +76,10 @@ const TechnicianUsers = () => {
       const cacheKey = `technicianUsersData_${urlBranch || 'all'}`;
 
       const cachedTechnicians = localStorage.getItem(cacheKey);
-      
+
       if (cachedTechnicians) {
-        setTechnicians(JSON.parse(cachedTechnicians));
+        const parsedTechnicians = JSON.parse(cachedTechnicians);
+        setTechnicians(parsedTechnicians);
         console.log("Using cached technician data after fetch error");
       } else {
         setError('Server error. Please try again later.');
@@ -128,15 +136,18 @@ const TechnicianUsers = () => {
       if (data.success) {
         const techniciansData = data.data || [];
         setTechnicians(techniciansData);
-        
+
         // Cache the technicians data with branch-specific key
         const cacheKey = `technicianUsersData_${urlBranch || 'all'}`;
         localStorage.setItem(cacheKey, JSON.stringify(techniciansData));
-        
+
         // Update last refresh time
         setLastRefreshTime(new Date().getTime());
+        // console.log("Fresh technician data cached");
       } else {
-        setError('Failed to fetch technicians');
+        if (!isBackground) {
+          setError('Failed to fetch technicians');
+        }
       }
     } catch (err) {
       if (!isBackground) {
@@ -152,17 +163,7 @@ const TechnicianUsers = () => {
   };
 
   useEffect(() => {
-    // Clear all cached technician data on mount to avoid stale cache issues
-    Object.keys(localStorage).forEach(key => {
-      if (key.startsWith('technicianUsersData_')) {
-        localStorage.removeItem(key);
-      }
-    });
-    fetchTechnicians();
-  }, [user.role, user.selectedBranch, window.location.search]);
-  
-  useEffect(() => {
-    // Include branch param from URL search params in dependency array
+    // Don't clear cache on mount - let it serve instantly
     fetchTechnicians();
   }, [user.role, user.selectedBranch, window.location.search]);
   
@@ -170,23 +171,43 @@ const TechnicianUsers = () => {
     setSearchTerm(e.target.value);
   };
   
-  const filteredTechnicians = technicians.filter(tech => {
-    const fullName = `${tech.firstName} ${tech.lastName}`.toLowerCase();
-    const term = searchTerm.toLowerCase();
-    
-    return (
-      fullName.includes(term) ||
-      tech.username.toLowerCase().includes(term) ||
-      tech.email.toLowerCase().includes(term) ||
-      (tech.branch && typeof tech.branch === 'object' && tech.branch.name.toLowerCase().includes(term))
-    );
-  });
+  const filteredTechnicians = technicians
+    .filter(tech => {
+      const fullName = `${tech.firstName} ${tech.lastName}`.toLowerCase();
+      const term = searchTerm.toLowerCase();
+
+      return (
+        fullName.includes(term) ||
+        tech.username.toLowerCase().includes(term) ||
+        tech.email.toLowerCase().includes(term) ||
+        (tech.branch && typeof tech.branch === 'object' && tech.branch.name.toLowerCase().includes(term))
+      );
+    })
+    .sort((a, b) => {
+      if (sortField === 'date') {
+        // Sort by creation date (createdAt)
+        const dateA = a.createdAt || a.updatedAt || '';
+        const dateB = b.createdAt || b.updatedAt || '';
+
+        const comparison = new Date(dateB) - new Date(dateA);
+        return sortOrder === 'desc' ? comparison : -comparison;
+      } else if (sortField === 'name') {
+        // Sort by technician name
+        const nameA = `${a.firstName || ''} ${a.lastName || ''}`.toLowerCase().trim();
+        const nameB = `${b.firstName || ''} ${b.lastName || ''}`.toLowerCase().trim();
+
+        if (nameA < nameB) return sortOrder === 'asc' ? -1 : 1;
+        if (nameA > nameB) return sortOrder === 'asc' ? 1 : -1;
+        return 0;
+      }
+      return 0;
+    });
   
   const handleDeleteUser = async (userId) => {
     if (!window.confirm('Are you sure you want to delete this technician?')) {
       return;
     }
-    
+
     try {
       const response = await fetch(`${SummaryApi.deleteUser.url}/${userId}`, {
         method: SummaryApi.deleteUser.method,
@@ -195,13 +216,17 @@ const TechnicianUsers = () => {
           'Content-Type': 'application/json',
         },
       });
-      
+
       const data = await response.json();
-      
+
       if (data.success) {
-        // Invalidate cache
-        localStorage.removeItem('technicianUsersData');
-        
+        // Clear all branch-specific caches
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('technicianUsersData_')) {
+            localStorage.removeItem(key);
+          }
+        });
+
         // Update technicians list
         fetchFreshTechnicians();
       } else {
@@ -231,13 +256,44 @@ const TechnicianUsers = () => {
   
   // Handle successful technician addition
   const handleTechnicianSuccess = () => {
-    // Clear the cache to force a fresh fetch
-    localStorage.removeItem('technicianUsersData');
-    
+    // Clear all branch-specific caches
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith('technicianUsersData_')) {
+        localStorage.removeItem(key);
+      }
+    });
+
     // Fetch fresh data
     fetchFreshTechnicians();
   };
-  
+
+  // Handle sort option selection
+  const handleSortSelection = (field) => {
+    if (sortField === field) {
+      // Toggle order if same field selected
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      // Set new field with default order
+      setSortField(field);
+      setSortOrder(field === 'date' ? 'desc' : 'asc'); // date defaults to desc (newest first), name to asc
+    }
+    setIsSortDropdownOpen(false);
+  };
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (sortDropdownRef.current && !sortDropdownRef.current.contains(event.target)) {
+        setIsSortDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
   return (
     <div className="">
       {/* Main Container with White Box */}
@@ -245,35 +301,92 @@ const TechnicianUsers = () => {
         {/* Header */}
         <div className="mb-4">
           <div className="flex justify-between items-center mb-4">
-            <h1 className="text-2xl font-semibold text-gray-800">User Management</h1>
-            
-            <div className="flex items-center">
-              <button 
-                onClick={() => fetchFreshTechnicians()}
-                className="p-2 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700 mr-3"
-                title="Refresh Technicians"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
-                </svg>
-              </button>
-          
+            <div>
+              <h1 className="text-2xl font-semibold text-gray-800">User Management</h1>
+              <p className="text-gray-600 mt-1">Manage your engineers</p>
             </div>
+
+            {/* Refresh button */}
+            <button
+              onClick={() => fetchFreshTechnicians()}
+              className="p-2 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700"
+              title="Refresh Technicians"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+              </svg>
+            </button>
           </div>
 
-          {/* Add Technician button - uses modal for both admin and manager */}
-          <button
-                onClick={() => setModalOpen(true)}
-                className="px-4 py-2 bg-pink-600 text-white rounded-full hover:bg-pink-700 flex items-center whitespace-nowrap"
+          {/* Add Engineer button and Sort Dropdown */}
+          <div className="flex justify-between items-center gap-3">
+            <button
+              onClick={() => setModalOpen(true)}
+              className="px-4 py-2 bg-pink-600 text-white rounded-full hover:bg-pink-700 flex items-center whitespace-nowrap"
+            >
+              <FiPlus className="mr-2" /> Add Engineer
+            </button>
+
+            {/* Sort Dropdown */}
+            <div className="relative" ref={sortDropdownRef}>
+              <button
+                onClick={() => setIsSortDropdownOpen(!isSortDropdownOpen)}
+                className="flex items-center px-4 py-2 rounded-full text-sm font-medium bg-gray-100 text-gray-600 hover:bg-gray-200"
               >
-                <FiPlus className="mr-2" /> Add Technician
+                {sortOrder === 'asc' ? (
+                  <LuArrowDownUp className="h-4 w-4 mr-2" />
+                ) : (
+                  <LuArrowUpDown className="h-4 w-4 mr-2" />
+                )}
+                Sort
+                <FiChevronDown className="ml-2 h-4 w-4" />
               </button>
+
+              {/* Sort Dropdown Menu */}
+              {isSortDropdownOpen && (
+                <div className="absolute right-0 mt-2 w-56 bg-white rounded-md shadow-lg z-50 border border-gray-200">
+                  <div className="py-1">
+                    <button
+                      onClick={() => handleSortSelection('name')}
+                      className={`flex items-center justify-between w-full px-4 py-2 text-sm text-left hover:bg-gray-100 ${
+                        sortField === 'name' ? 'bg-gray-50 text-teal-600 font-medium' : 'text-gray-700'
+                      }`}
+                    >
+                      <span>Technician Name</span>
+                      {sortField === 'name' && (
+                        sortOrder === 'asc' ? (
+                          <LuArrowDownUp className="h-4 w-4" />
+                        ) : (
+                          <LuArrowUpDown className="h-4 w-4" />
+                        )
+                      )}
+                    </button>
+                    <button
+                      onClick={() => handleSortSelection('date')}
+                      className={`flex items-center justify-between w-full px-4 py-2 text-sm text-left hover:bg-gray-100 ${
+                        sortField === 'date' ? 'bg-gray-50 text-teal-600 font-medium' : 'text-gray-700'
+                      }`}
+                    >
+                      <span>Date Added</span>
+                      {sortField === 'date' && (
+                        sortOrder === 'asc' ? (
+                          <LuArrowDownUp className="h-4 w-4" />
+                        ) : (
+                          <LuArrowUpDown className="h-4 w-4" />
+                        )
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
           
           {/* Search bar */}
           <div className="relative flex-grow mt-4">
             <input
               type="text"
-              placeholder="Search technicians..."
+              placeholder="Search engineers..."
               value={searchTerm}
               onChange={handleSearch}
               className="w-full px-3 py-2 pl-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
@@ -323,11 +436,9 @@ const TechnicianUsers = () => {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredTechnicians.map((technician, index) => (
                     <React.Fragment key={technician._id}>
-                      <tr 
-                        className={`hover:bg-gray-50 cursor-pointer ${
-                          expandedTechnician === technician._id ? 'bg-gray-50' : ''
-                        }`}
-                        onClick={() => handleRowClick(technician._id)}
+                      <tr
+                        className="hover:bg-gray-50 cursor-pointer"
+                        onClick={() => handleViewDetails(technician._id)}
                       >
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="w-8 h-8 rounded-full bg-pink-600 flex items-center justify-center text-white font-medium">
@@ -365,53 +476,6 @@ const TechnicianUsers = () => {
                           </span>
                         </td>
                       </tr>
-                      
-                      {/* Expanded row with action buttons */}
-                      {expandedTechnician === technician._id && (
-                        <tr>
-                          <td colSpan="5" className="px-6 py-4 bg-gray-50 border-b">
-                            <div className="flex space-x-4">
-                              <button 
-                                className="px-4 py-1.5 bg-blue-500 text-white rounded-md hover:bg-blue-600 flex items-center text-sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleViewDetails(technician._id);
-                                }}
-                              >
-                                <FiUser className="mr-2" />
-                                View Details
-                              </button>
-                              
-                              {user.role === 'manager' && (
-                                <>
-                                  <button 
-                                    className="px-4 py-1.5 bg-green-500 text-white rounded-md hover:bg-green-600 flex items-center text-sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleAssignInventory(technician);
-                                    }}
-                                  >
-                                    <FiPackage className="mr-2" />
-                                    Assign Inventory
-                                  </button>
-                                  
-                                  {/* View Inventory button */}
-                                  <button 
-                                    className="px-4 py-1.5 bg-purple-500 text-white rounded-md hover:bg-purple-600 flex items-center text-sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleViewInventory(technician);
-                                    }}
-                                  >
-                                    <FiList className="mr-2" />
-                                    View Inventory
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
                     </React.Fragment>
                   ))}
                 </tbody>
@@ -422,14 +486,26 @@ const TechnicianUsers = () => {
       </div>
 
       {/* Add the TechnicianDetailModal */}
-      <TechnicianDetailModal 
+      <TechnicianDetailModal
         isOpen={showDetailModal}
         onClose={() => setShowDetailModal(false)}
         technicianId={selectedTechnicianId}
         onTechnicianUpdated={() => {
-          // Invalidate cache
-          localStorage.removeItem('technicianUsersData');
+          // Clear all branch-specific caches
+          Object.keys(localStorage).forEach(key => {
+            if (key.startsWith('technicianUsersData_')) {
+              localStorage.removeItem(key);
+            }
+          });
           fetchFreshTechnicians();
+        }}
+        onAssignInventory={(technician) => {
+          // Don't close detail modal, just open assign inventory modal
+          handleAssignInventory(technician);
+        }}
+        onViewInventory={(technician) => {
+          // Don't close detail modal, just open view inventory modal
+          handleViewInventory(technician);
         }}
       />
       
@@ -449,6 +525,8 @@ const TechnicianUsers = () => {
           onSuccess={() => {
             // Refresh the technicians list after successful assignment
             fetchFreshTechnicians();
+            // Trigger refresh of TechnicianInventoryModal
+            setInventoryRefreshTrigger(prev => prev + 1);
           }}
         />
       )}
@@ -459,6 +537,11 @@ const TechnicianUsers = () => {
           isOpen={showInventoryModal}
           onClose={() => setShowInventoryModal(false)}
           technician={selectedTechnicianForInventory}
+          refreshTrigger={inventoryRefreshTrigger}
+          onAssignInventory={(technician) => {
+            // Open assign inventory modal when button is clicked in inventory modal
+            handleAssignInventory(technician);
+          }}
         />
       )}
     </div>

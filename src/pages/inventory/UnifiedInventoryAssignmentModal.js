@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FiPlus, FiMinus, FiX, FiSearch } from 'react-icons/fi';
+import { FiPlus, FiMinus, FiX, FiSearch, FiTrash2, FiAlertCircle } from 'react-icons/fi';
 import Modal from '../../components/Modal';
 import SummaryApi from '../../common';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import { useNotification } from '../../context/NotificationContext';
+import { SerializedStockForm, GenericStockForm } from './AllInventoryItems';
 
 const UnifiedInventoryAssignmentModal = ({ isOpen, onClose, technician, onSuccess }) => {
   const { showNotification } = useNotification();
@@ -11,15 +12,20 @@ const UnifiedInventoryAssignmentModal = ({ isOpen, onClose, technician, onSucces
   const [loadingInventory, setLoadingInventory] = useState(false);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [serialNumber, setSerialNumber] = useState('');
   const [serializedProducts, setSerializedProducts] = useState([]);
   const [genericProducts, setGenericProducts] = useState([]);
   const [selectedItems, setSelectedItems] = useState([]);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const searchInputRef = useRef(null);
-  const serialInputRef = useRef(null);
+  const [selectedSerialNumbers, setSelectedSerialNumbers] = useState({});
+  const [showAddStockModal, setShowAddStockModal] = useState(false);
+  const [stockModalItem, setStockModalItem] = useState(null);
+  const [stockEntriesToSave, setStockEntriesToSave] = useState([]);
+  const [currentStockItem, setCurrentStockItem] = useState(null);
+  const [showStockSaveConfirmation, setShowStockSaveConfirmation] = useState(false);
+  const [stockSaveLoading, setStockSaveLoading] = useState(false);
 
-  // Add states for dropdown
+  // Add states for serial number search dropdown
   const [matchingSerialNumbers, setMatchingSerialNumbers] = useState([]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
@@ -32,79 +38,165 @@ const UnifiedInventoryAssignmentModal = ({ isOpen, onClose, technician, onSucces
       // Reset when modal closes
       setSelectedItems([]);
       setSearchTerm('');
-      setSerialNumber('');
       setShowConfirmation(false);
+      setSelectedSerialNumbers({});
       setMatchingSerialNumbers([]);
       setIsDropdownOpen(false);
       setHighlightedIndex(-1);
+      setShowAddStockModal(false);
+      setStockModalItem(null);
+      setStockEntriesToSave([]);
+      setCurrentStockItem(null);
+      setShowStockSaveConfirmation(false);
+      setStockSaveLoading(false);
     }
   }, [isOpen]);
 
-  // Add effect to filter serial numbers as user types
-   // Filter serial numbers as user types
-   useEffect(() => {
-    if (serialNumber.trim().length > 0) {
-      // Get all serial numbers from serialized products
-      const allSerialNumbers = [];
-      serializedProducts.forEach(product => {
-        if (product.stock && Array.isArray(product.stock)) {
-          product.stock.forEach(stockItem => {
-            if (stockItem.serialNumber && 
-                stockItem.serialNumber.toLowerCase().includes(serialNumber.toLowerCase())) {
-              allSerialNumbers.push({
-                serialNumber: stockItem.serialNumber,
-                productId: product.id,
-                productName: product.name
-              });
-            }
-          });
-        }
-      });
-      
-      setMatchingSerialNumbers(allSerialNumbers);
-      setIsDropdownOpen(allSerialNumbers.length > 0);
-      setHighlightedIndex(allSerialNumbers.length > 0 ? 0 : -1);
+  // Filter serial numbers as user types for dropdown
+  useEffect(() => {
+    if (searchTerm.trim().length > 0) {
+      // Check if search term looks like a serial number (you can adjust this logic)
+      const isSerialSearch = /^[A-Za-z0-9]{3,}$/.test(searchTerm.trim());
+
+      if (isSerialSearch) {
+        // Get all already selected serial numbers
+        const selectedSerialNumbersList = [];
+        selectedItems.forEach(item => {
+          if (item.type === 'serialized-product' && item.serialNumbers) {
+            selectedSerialNumbersList.push(...item.serialNumbers);
+          }
+        });
+
+        // Get all serial numbers from serialized products
+        const allSerialNumbers = [];
+        serializedProducts.forEach(product => {
+          if (product.stock && Array.isArray(product.stock)) {
+            product.stock.forEach(stockItem => {
+              if (stockItem.serialNumber &&
+                  stockItem.serialNumber.toLowerCase().includes(searchTerm.toLowerCase()) &&
+                  !selectedSerialNumbersList.includes(stockItem.serialNumber)) {
+                allSerialNumbers.push({
+                  serialNumber: stockItem.serialNumber,
+                  productId: product.id,
+                  productName: product.name
+                });
+              }
+            });
+          }
+        });
+
+        setMatchingSerialNumbers(allSerialNumbers);
+        setIsDropdownOpen(allSerialNumbers.length > 0);
+        setHighlightedIndex(allSerialNumbers.length > 0 ? 0 : -1);
+      } else {
+        setMatchingSerialNumbers([]);
+        setIsDropdownOpen(false);
+        setHighlightedIndex(-1);
+      }
     } else {
       setMatchingSerialNumbers([]);
       setIsDropdownOpen(false);
       setHighlightedIndex(-1);
     }
-  }, [serialNumber, serializedProducts]);
+  }, [searchTerm, serializedProducts, selectedItems]);
 
-  // Handle keyboard navigation for dropdown
-const handleKeyDown = (e) => {
-  if (!isDropdownOpen) {
-    if (e.key === 'Enter' && serialNumber.trim()) {
-      checkSerialNumber();
+    // Get available serial numbers for a product (excluding already selected ones)
+  const getAvailableSerialNumbers = (product) => {
+    if (product.type !== 'serialized-product') return [];
+
+    const usedSerials = selectedItems
+      .filter(item => item.id === product.id && item.serialNumbers)
+      .flatMap(item => item.serialNumbers) || [];
+
+    return product.stock
+      ?.filter(stock => stock.serialNumber && !usedSerials.includes(stock.serialNumber))
+      ?.map(stock => stock.serialNumber) || [];
+  };
+
+  // Handle serial number selection for a product
+  const handleSerialNumberChange = (productId, serialNumber) => {
+    setSelectedSerialNumbers(prev => ({
+      ...prev,
+      [productId]: serialNumber
+    }));
+  };
+
+  const openAddStockModal = (product) => {
+    const normalizedItem = {
+      ...product,
+      itemType: product.type === 'serialized-product' ? 'serialized' :
+        product.type === 'generic-product' ? 'generic' : product.type
+    };
+    setStockModalItem(normalizedItem);
+    setShowAddStockModal(true);
+  };
+
+  const closeAddStockModal = () => {
+    setShowAddStockModal(false);
+    setStockModalItem(null);
+    setStockEntriesToSave([]);
+    setCurrentStockItem(null);
+    setShowStockSaveConfirmation(false);
+    setStockSaveLoading(false);
+  };
+
+  const handlePrepareForSaving = (entries, item) => {
+    setStockEntriesToSave(entries);
+    setCurrentStockItem(item);
+    setShowStockSaveConfirmation(true);
+  };
+
+  // Handle keyboard navigation for serial number dropdown
+  const handleKeyDown = (e) => {
+    if (!isDropdownOpen) {
+      return;
     }
-    return;
-  }
-  
-  switch (e.key) {
-    case 'ArrowDown':
-      e.preventDefault();
-      setHighlightedIndex(prev => 
-        prev < matchingSerialNumbers.length - 1 ? prev + 1 : prev
-      );
-      break;
-    case 'ArrowUp':
-      e.preventDefault();
-      setHighlightedIndex(prev => prev > 0 ? prev - 1 : 0);
-      break;
-    case 'Enter':
-      e.preventDefault();
-      if (highlightedIndex >= 0 && highlightedIndex < matchingSerialNumbers.length) {
-        const selected = matchingSerialNumbers[highlightedIndex];
-        handleSelectSerialNumber(selected);
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setHighlightedIndex(prev =>
+          prev < matchingSerialNumbers.length - 1 ? prev + 1 : prev
+        );
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setHighlightedIndex(prev => prev > 0 ? prev - 1 : 0);
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (highlightedIndex >= 0 && highlightedIndex < matchingSerialNumbers.length) {
+          const selected = matchingSerialNumbers[highlightedIndex];
+          handleSelectSerialNumber(selected);
+        }
+        break;
+      case 'Escape':
+        setIsDropdownOpen(false);
+        break;
+      default:
+        break;
+    }
+  };
+
+  // Handle select serial number from dropdown
+  const handleSelectSerialNumber = (serialData) => {
+    // Find the product
+    const product = serializedProducts.find(p => p.id === serialData.productId);
+
+    if (product) {
+      addSerializedProduct(product, serialData.serialNumber);
+      setSearchTerm(''); // Clear search input
+      setIsDropdownOpen(false); // Close dropdown
+      setHighlightedIndex(-1); // Reset highlighted index
+
+      // Focus back on the input
+      if (searchInputRef.current) {
+        searchInputRef.current.focus();
       }
-      break;
-    case 'Escape':
-      setIsDropdownOpen(false);
-      break;
-    default:
-      break;
-  }
-};
+    } else {
+      showNotification('error', 'Product not found for this serial number');
+    }
+  };
 
 
   const fetchProducts = async () => {
@@ -140,25 +232,45 @@ const handleKeyDown = (e) => {
     }
   };
 
-  // Handle select serial number from suggestions
-  const handleSelectSerialNumber = (serialData) => {
-    // Find the product
-    const product = serializedProducts.find(p => p.id === serialData.productId);
-    
-    if (product) {
-      addSerializedProduct(product, serialData.serialNumber);
-      setSerialNumber(''); // Clear input
-      setIsDropdownOpen(false); // Close dropdown
-      setHighlightedIndex(-1); // Reset highlighted index
-      
-      // Focus back on the input
-      if (serialInputRef.current) {
-        serialInputRef.current.focus();
+  const handleSaveStock = async () => {
+    if (!currentStockItem || stockEntriesToSave.length === 0) {
+      setShowStockSaveConfirmation(false);
+      return;
+    }
+
+    try {
+      setStockSaveLoading(true);
+
+      for (const entry of stockEntriesToSave) {
+        const response = await fetch(SummaryApi.addInventoryStock.url, {
+          method: SummaryApi.addInventoryStock.method,
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            itemId: currentStockItem.id,
+            ...entry
+          })
+        });
+
+        const data = await response.json();
+
+        if (!data.success) {
+          throw new Error(data.message || 'Failed to add stock');
+        }
       }
-    } else {
-      showNotification('error', 'Product not found for this serial number');
+
+      showNotification('success', 'Stock added successfully');
+      closeAddStockModal();
+      await fetchProducts(true);
+    } catch (err) {
+      showNotification('error', err.message || 'Failed to add stock');
+    } finally {
+      setStockSaveLoading(false);
     }
   };
+
 
   // All products combined (for display)
   const allProducts = [...serializedProducts, ...genericProducts].map(product => ({
@@ -166,39 +278,61 @@ const handleKeyDown = (e) => {
     displayType: product.type === 'serialized-product' ? 'Serialized' : 'Generic'
   }));
 
-  // Filter products based on search term
-  const filteredProducts = allProducts.filter(product => 
-    product.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Filter products based on search term - includes both name and serial number search
+  const filteredProducts = allProducts.filter(product => {
+    if (!searchTerm.trim()) return true;
 
-  // Check if serial number exists in inventory
-  const checkSerialNumber = async () => {
-    if (!serialNumber.trim()) return;
-    
-    try {
-      const response = await fetch(`${SummaryApi.checkSerialNumber.url}/${serialNumber.trim()}`, {
-        method: 'GET',
-        credentials: 'include'
-      });
-      
-      const data = await response.json();
-      
-      if (data.exists) {
-        // Find the product with this serial number
-        const serializedProduct = serializedProducts.find(p => p.id === data.item.id);
-        
-        if (serializedProduct) {
-          // Add to selected items
-          addSerializedProduct(serializedProduct, serialNumber.trim());
-          setSerialNumber(''); // Clear input field
-        }
-      } else {
-        showNotification('error', data.message || 'Serial number not found in inventory');
-      }
-    } catch (err) {
-      console.error('Error checking serial number:', err);
-      showNotification('error', 'Error checking serial number');
+    const query = searchTerm.trim().toLowerCase();
+    const queryWords = query.split(/\s+/);
+
+    const nameMatch = queryWords.every(word =>
+      product.name?.toLowerCase().includes(word)
+    );
+    if (nameMatch) return true;
+
+    if (product.type === 'serialized-product' && product.stock) {
+      const serialMatch = product.stock.some(stock =>
+        stock.serialNumber && stock.serialNumber.toLowerCase().includes(query)
+      );
+      if (serialMatch) return true;
     }
+
+    if (product.category) {
+      const categoryMatch = queryWords.every(word =>
+        product.category.toLowerCase().includes(word)
+      );
+      if (categoryMatch) return true;
+    }
+
+    return false;
+  });
+
+  // Add serialized product with selected serial number
+  const addSerializedProductWithSerial = (product) => {
+    const selectedSerial = selectedSerialNumbers[product.id];
+
+    if (!selectedSerial) {
+      showNotification('error', 'Please select a serial number for this product');
+      return;
+    }
+
+    // Check if this serial number is already added
+    const exists = selectedItems.some(item =>
+      item.type === 'serialized-product' && item.serialNumbers && item.serialNumbers.includes(selectedSerial)
+    );
+
+    if (exists) {
+      showNotification('warning', 'This serial number is already added');
+      return;
+    }
+
+    addSerializedProduct(product, selectedSerial);
+
+    // Clear the selected serial number
+    setSelectedSerialNumbers(prev => ({
+      ...prev,
+      [product.id]: ''
+    }));
   };
 
   // Add serialized product with serial number
@@ -241,9 +375,23 @@ const handleKeyDown = (e) => {
 
   // Add generic product
   const addGenericProduct = (product) => {
+    // Calculate available stock
+    const availableStock = product.stock ? 
+      product.stock.reduce((total, item) => total + item.quantity, 0) : 0;
+
+    if (availableStock === 0) {
+      showNotification('error', 'This product is out of stock and cannot be added');
+      return;
+    }
+
     const existingItem = selectedItems.find(item => item.id === product.id);
     
     if (existingItem) {
+      // Check if we can add one more
+      if (existingItem.quantity >= availableStock) {
+        showNotification('warning', `Only ${availableStock} items available in stock`);
+        return;
+      }
       // Update quantity if item already exists
       setSelectedItems(selectedItems.map(item => 
         item.id === product.id 
@@ -265,9 +413,21 @@ const handleKeyDown = (e) => {
 
   // Handle product selection
   const handleSelectProduct = (product) => {
+    // Calculate available stock
+    const availableStock = product.stock ?
+      (product.type === 'serialized-product'
+        ? product.stock.length
+        : product.stock.reduce((total, item) => total + item.quantity, 0)
+      ) : 0;
+
+    if (availableStock === 0) {
+      showNotification('error', 'This product is out of stock and cannot be added');
+      return;
+    }
+
     if (product.type === 'serialized-product') {
-      // For serialized products, show notification to enter serial number
-      showNotification('info', 'Please enter or scan a serial number for this product');
+      // For serialized products, try to add with selected serial number
+      addSerializedProductWithSerial(product);
     } else {
       // For generic products, add directly
       addGenericProduct(product);
@@ -339,12 +499,6 @@ const handleKeyDown = (e) => {
   // Calculate total items
   const totalItems = selectedItems.reduce((sum, item) => sum + item.quantity, 0);
 
-  // Handle key press for barcode scanner
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter' && serialNumber.trim()) {
-      checkSerialNumber();
-    }
-  };
 
   // Submit and assign inventory
   const handleAssignInventory = async () => {
@@ -419,6 +573,8 @@ const handleKeyDown = (e) => {
       onClose={onClose}
       title={`Assign Inventory to ${technician?.firstName} ${technician?.lastName}`}
       size="xl"
+      zIndex="z-[70]"
+      draggable={true}
     >
       {error && (
         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
@@ -438,61 +594,50 @@ const handleKeyDown = (e) => {
               {/* Left side - Product list */}
               <div className="w-full md:w-2/3 flex flex-col border-r">
                 <div className="p-4 border-b">
-                  <div className="relative">
-                    <input
-                      ref={searchInputRef}
-                      type="text"
-                      placeholder="Search product..."
-                      className="w-full p-3 border rounded pl-10"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                    />
-                    <FiSearch className="absolute left-3 top-[14px] text-gray-400" />
-                  </div>
-                </div>
-                
-                <div className="p-4 border-b">
-                  <h3 className="font-medium mb-2">Scan Serial Number (for serialized products)</h3>
-                  <div className="flex space-x-2">
-                    <input
-                      type="text"
-                      placeholder="Enter or scan serial number"
-                      className="flex-grow p-2 border rounded"
-                      value={serialNumber}
-                      onChange={(e) => setSerialNumber(e.target.value)}
-                      onKeyPress={handleKeyDown}
-                    />
-
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        ref={searchInputRef}
+                        type="text"
+                        placeholder="Search by product name or serial number..."
+                        className="w-full p-3 border rounded pl-10"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                      />
+                      <FiSearch className="absolute left-3 top-[14px] text-gray-400" />
+                    </div>
                     <button
-                      type="button"
-                      onClick={checkSerialNumber}
-                      className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                      disabled={!serialNumber.trim()}
+                      onClick={() => fetchProducts()}
+                      className="p-3 bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors flex-shrink-0"
+                      title="Refresh Products"
                     >
-                      Verify
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+                      </svg>
                     </button>
+                  </div>
 
-                    {/* Improved dropdown styling */}
-                {isDropdownOpen && (
-                  <div className="absolute z-10 w-96 mt-10 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                    {matchingSerialNumbers.map((item, index) => (
-                      <div 
-                        key={index}
-                        className={`px-4 py-2 cursor-pointer border-b last:border-b-0 ${
-                          highlightedIndex === index ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
-                        }`}
-                        onClick={() => handleSelectSerialNumber(item)}
-                        onMouseEnter={() => setHighlightedIndex(index)}
-                      >
-                        <div className="font-medium text-gray-800">{item.serialNumber}</div>
-                        <div className="text-xs text-gray-500">{item.productName}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                  </div>
+                  {/* Serial Number Dropdown */}
+                  {isDropdownOpen && (
+                    <div className="absolute z-10 left-4 right-20 mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                        {matchingSerialNumbers.map((item, index) => (
+                          <div
+                            key={index}
+                            className={`px-4 py-2 cursor-pointer border-b last:border-b-0 hover:bg-gray-50 ${
+                              highlightedIndex === index ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
+                            }`}
+                            onClick={() => handleSelectSerialNumber(item)}
+                            onMouseEnter={() => setHighlightedIndex(index)}
+                          >
+                            <div className="font-medium text-gray-800">{item.serialNumber}</div>
+                            <div className="text-xs text-gray-500">{item.productName}</div>
+                          </div>
+                        ))}
+                    </div>
+                  )}
                 </div>
-                
+
                 <div className="flex-1 overflow-y-auto p-4">
                   <h3 className="font-medium mb-2">Available Products</h3>
                   <div className="grid grid-cols-1 gap-2">
@@ -505,10 +650,9 @@ const handleKeyDown = (e) => {
                         ) : 0;
                       
                       return (
-                        <div 
-                          key={product.id} 
-                          className="border p-3 rounded hover:bg-gray-50 cursor-pointer"
-                          onClick={() => handleSelectProduct(product)}
+                        <div
+                          key={product.id}
+                          className="border p-3 rounded hover:bg-gray-50"
                         >
                           <div className="flex justify-between">
                             <div>
@@ -518,12 +662,90 @@ const handleKeyDown = (e) => {
                               </div>
                             </div>
                             <div className="text-right">
-                              <div className="font-bold">₹{product.salePrice}</div>
+                              <div className="font-bold">
+                                ₹{product.pricing?.customerPrice || 0}
+                              </div>
                               <div className="text-sm text-gray-500">
                                 Available: {availableStock} {product.unit || 'units'}
                               </div>
                             </div>
                           </div>
+
+                          {/* For serialized products, show dropdown and add button */}
+                          {product.type === 'serialized-product' && (
+                            <div className="mt-3 space-y-2">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  Choose Serial Number
+                                </label>
+                                <select
+                                  value={selectedSerialNumbers[product.id] || ''}
+                                  onChange={(e) => handleSerialNumberChange(product.id, e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-300"
+                                >
+                                  <option value="">Select serial number...</option>
+                                  {getAvailableSerialNumbers(product).map((serial, index) => (
+                                    <option
+                                      key={`${product.id || product._id || 'product'}-${serial}-${index}`}
+                                      value={serial}
+                                    >
+                                      {serial}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="flex flex-col sm:flex-row gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => openAddStockModal(product)}
+                                  className="flex-1 py-2 px-4 bg-green-500 hover:bg-green-600 text-white rounded font-medium"
+                                >
+                                  Add Stock
+                                </button>
+                                <button
+                                  onClick={() => handleSelectProduct(product)}
+                                  disabled={!selectedSerialNumbers[product.id] || availableStock === 0}
+                                  className="flex-1 py-2 px-4 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 text-white rounded font-medium"
+                                >
+                                  Add
+                                </button>
+                              </div>
+                              {availableStock === 0 && (
+                                <div className="flex items-center gap-1 text-xs text-red-600">
+                                  <FiAlertCircle size={12} />
+                                  <span>Out of stock - Add stock to continue</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* For generic products, show add button directly */}
+                          {product.type === 'generic-product' && (
+                            <div className="mt-3 space-y-2">
+                              <div className="flex flex-col sm:flex-row gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => openAddStockModal(product)}
+                                  className="flex-1 py-2 px-4 bg-green-500 hover:bg-green-600 text-white rounded font-medium"
+                                >
+                                  Add Stock
+                                </button>
+                                <button
+                                  onClick={() => handleSelectProduct(product)}
+                                  disabled={availableStock === 0}
+                                  className="flex-1 py-2 px-4 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 text-white rounded font-medium"
+                                >
+                                  Add
+                                </button>
+                              </div>
+                              {availableStock === 0 && (
+                                <div className="flex items-center gap-1 text-xs text-red-600">
+                                  <FiAlertCircle size={12} />
+                                  <span>Out of stock - Add stock to continue</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -553,32 +775,53 @@ const handleKeyDown = (e) => {
                       <div key={item.id} className="mb-4 border-b pb-2">
                         <div className="flex justify-between">
                           <div className="font-medium">{item.name}</div>
-                          <button 
+                          <button
                             onClick={() => removeItem(item.id)}
                             className="text-red-500 hover:text-red-700"
                           >
-                            <FiX className="w-5 h-5" />
+                            <FiTrash2 className="w-5 h-5" />
                           </button>
                         </div>
                         
                         <div className="text-sm text-gray-500">
                           Type: {item.type === 'serialized-product' ? 'Serialized' : 'Generic'}
                         </div>
-                        
+
+                        {/* Pricing Information */}
+                        {/* {item.pricing && (
+                          <div className="mt-2 p-2 bg-gray-50 rounded text-xs space-y-1">
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Customer Price:</span>
+                              <span className="font-medium text-green-700">₹{item.pricing.customerPrice || 0}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Dealer Price:</span>
+                              <span className="font-medium text-blue-700">₹{item.pricing.dealerPrice || 0}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Distributor Price:</span>
+                              <span className="font-medium text-purple-700">₹{item.pricing.distributorPrice || 0}</span>
+                            </div>
+                          </div>
+                        )} */}
+
                         {/* For serialized products, show serial numbers */}
                         {item.type === 'serialized-product' && (
                           <div className="mt-2">
                             <div className="text-sm font-medium">Serial Numbers:</div>
-                            {item.serialNumbers.map(sn => (
-                              <div key={sn} className="flex justify-between items-center text-sm mt-1">
+                            {item.serialNumbers.map((sn, index) => (
+                              <div
+                                key={`${item.id || item._id || 'item'}-${sn}-${index}`}
+                                className="flex justify-between items-center text-sm mt-1"
+                              >
                                 <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
                                   {sn}
                                 </span>
-                                <button 
+                                <button
                                   onClick={() => removeSerialNumber(item.id, sn)}
                                   className="text-red-500 hover:text-red-700"
                                 >
-                                  <FiX className="w-4 h-4" />
+                                  <FiTrash2 className="w-4 h-4" />
                                 </button>
                               </div>
                             ))}
@@ -662,8 +905,16 @@ const handleKeyDown = (e) => {
                         </td>
                         <td className="px-4 py-2 text-right">{item.quantity}</td>
                         <td className="px-4 py-2 text-right">
-                          {item.type === 'serialized-product' 
-                            ? <span className="text-blue-600">{item.serialNumbers.length} Serial Numbers</span>
+                          {item.type === 'serialized-product'
+                            ? (
+                              <div className="flex flex-col items-end gap-1">
+                                {item.serialNumbers.map((serial, idx) => (
+                                  <span key={idx} className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-mono">
+                                    {serial}
+                                  </span>
+                                ))}
+                              </div>
+                            )
                             : <span>{item.unit || 'units'}</span>
                           }
                         </td>
@@ -692,6 +943,82 @@ const handleKeyDown = (e) => {
           )}
         </>
       )}
+
+      {/* Add Stock Modal */}
+      <Modal
+        isOpen={showAddStockModal}
+        onClose={closeAddStockModal}
+        title={`Add Stock for ${stockModalItem?.name || ''}`}
+        size="lg"
+        zIndex="z-[80]"
+        draggable={true}
+      >
+        {stockModalItem && (
+          stockModalItem.itemType === 'serialized' ? (
+            <SerializedStockForm
+              item={stockModalItem}
+              onClose={closeAddStockModal}
+              showNotification={showNotification}
+              onSuccess={async () => {
+                closeAddStockModal();
+                await fetchProducts(true);
+              }}
+              onPrepareForSaving={handlePrepareForSaving}
+            />
+          ) : stockModalItem.itemType === 'generic' ? (
+            <GenericStockForm
+              item={stockModalItem}
+              onClose={closeAddStockModal}
+              showNotification={showNotification}
+              onSuccess={async () => {
+                closeAddStockModal();
+                await fetchProducts(true);
+              }}
+              onPrepareForSaving={handlePrepareForSaving}
+            />
+          ) : (
+            <div className="p-6 text-center text-gray-500">
+              Stock cannot be added to this item type.
+            </div>
+          )
+        )}
+      </Modal>
+
+      {/* Confirm Save Stock Modal */}
+      <Modal
+        isOpen={showStockSaveConfirmation}
+        onClose={() => setShowStockSaveConfirmation(false)}
+        title="Confirm Stock Save"
+        size="md"
+        zIndex="z-[90]"
+        draggable={true}
+      >
+        <div className="py-4">
+          <p className="text-center text-gray-600 mb-6">
+            {currentStockItem?.itemType === 'serialized' ? (
+              <>You are about to save <span className="font-bold">{stockEntriesToSave.length}</span> serial number{stockEntriesToSave.length !== 1 ? 's' : ''} for <span className="font-bold">{currentStockItem?.name}</span>.</>
+            ) : (
+              <>You are about to save <span className="font-bold">{stockEntriesToSave.reduce((sum, entry) => sum + Number(entry.quantity || 0), 0)}</span> {currentStockItem?.unit || 'items'} for <span className="font-bold">{currentStockItem?.name}</span>.</>
+            )}
+          </p>
+          <div className="flex justify-end space-x-3">
+            <button
+              onClick={() => setShowStockSaveConfirmation(false)}
+              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700"
+              disabled={stockSaveLoading}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSaveStock}
+              disabled={stockSaveLoading}
+              className={`px-4 py-2 rounded-md text-white ${stockSaveLoading ? 'bg-green-300 cursor-not-allowed' : 'bg-green-500 hover:bg-green-600'}`}
+            >
+              {stockSaveLoading ? 'Saving...' : 'Save Stock'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </Modal>
   );
 };
